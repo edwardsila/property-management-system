@@ -3,7 +3,7 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
+  provider = "sqlite"
 }
 
 enum UserRole {
@@ -135,8 +135,8 @@ model UnitType {
   propertyId     String
   name           String
   description    String?
-  defaultRent    Decimal? @db.Decimal(12, 2)
-  defaultDeposit Decimal? @db.Decimal(12, 2)
+  defaultRent    Decimal?
+  defaultDeposit Decimal?
   sortOrder      Int      @default(0)
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
@@ -157,9 +157,9 @@ model Unit {
   status        UnitStatus @default(VACANT)
   bedrooms      Int?
   bathrooms     Int?
-  areaSqFt      Decimal?   @db.Decimal(10, 2)
-  rentAmount    Decimal?   @db.Decimal(12, 2)
-  depositAmount Decimal?   @db.Decimal(12, 2)
+  areaSqFt      Decimal?
+  rentAmount    Decimal?
+  depositAmount Decimal?
   notes         String?
   createdAt     DateTime   @default(now())
   updatedAt     DateTime   @updatedAt
@@ -209,8 +209,8 @@ model Lease {
   endDate       DateTime?
   moveInDate    DateTime?
   moveOutDate   DateTime?
-  monthlyRent   Decimal     @db.Decimal(12, 2)
-  depositAmount Decimal?    @db.Decimal(12, 2)
+  monthlyRent   Decimal
+  depositAmount Decimal?
   graceDays     Int         @default(0)
   notes         String?
   createdAt     DateTime    @default(now())
@@ -231,7 +231,7 @@ model Payment {
   propertyId String
   leaseId    String
   tenantId   String
-  amount     Decimal       @db.Decimal(12, 2)
+  amount     Decimal
   method     PaymentMethod
   status     PaymentStatus @default(CONFIRMED)
   reference  String?
@@ -274,7 +274,7 @@ model Expense {
   propertyId String
   category   ExpenseCategory
   title      String
-  amount     Decimal         @db.Decimal(12, 2)
+  amount     Decimal
   occurredAt DateTime
   vendor     String?
   notes      String?

@@ -5,6 +5,9 @@ type PropertyRecord = Awaited<ReturnType<typeof prisma.property.findMany>>[numbe
 type FloorRecord = Awaited<ReturnType<typeof prisma.floor.findMany>>[number];
 type UnitTypeRecord = Awaited<ReturnType<typeof prisma.unitType.findMany>>[number];
 type UnitRecord = Awaited<ReturnType<typeof prisma.unit.findMany>>[number];
+type TenantRecord = Awaited<ReturnType<typeof prisma.tenant.findMany>>[number];
+type LeaseRecord = Awaited<ReturnType<typeof prisma.lease.findMany>>[number];
+type PaymentRecord = Awaited<ReturnType<typeof prisma.payment.findMany>>[number];
 
 function serializeDate(value: Date) {
   return value.toISOString();
@@ -15,11 +18,22 @@ function serializeDecimal(value: unknown) {
 }
 
 export async function GET() {
-  const [properties, floors, unitTypes, units]: [PropertyRecord[], FloorRecord[], UnitTypeRecord[], UnitRecord[]] = await Promise.all([
+  const [properties, floors, unitTypes, units, tenants, leases, payments]: [
+    PropertyRecord[],
+    FloorRecord[],
+    UnitTypeRecord[],
+    UnitRecord[],
+    TenantRecord[],
+    LeaseRecord[],
+    PaymentRecord[],
+  ] = await Promise.all([
     prisma.property.findMany({ orderBy: [{ createdAt: "asc" }] }),
     prisma.floor.findMany({ orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }] }),
     prisma.unitType.findMany({ orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }] }),
     prisma.unit.findMany({ orderBy: [{ createdAt: "asc" }] }),
+    prisma.tenant.findMany({ orderBy: [{ createdAt: "asc" }] }),
+    prisma.lease.findMany({ orderBy: [{ createdAt: "asc" }] }),
+    prisma.payment.findMany({ orderBy: [{ receivedAt: "desc" }] }),
   ]);
 
   return NextResponse.json({
@@ -47,6 +61,29 @@ export async function GET() {
       depositAmount: serializeDecimal(unit.depositAmount),
       createdAt: serializeDate(unit.createdAt),
       updatedAt: serializeDate(unit.updatedAt),
+    })),
+    tenants: tenants.map((tenant) => ({
+      ...tenant,
+      createdAt: serializeDate(tenant.createdAt),
+      updatedAt: serializeDate(tenant.updatedAt),
+    })),
+    leases: leases.map((lease) => ({
+      ...lease,
+      monthlyRent: serializeDecimal(lease.monthlyRent),
+      depositAmount: serializeDecimal(lease.depositAmount),
+      startDate: serializeDate(lease.startDate),
+      endDate: lease.endDate ? serializeDate(lease.endDate) : null,
+      moveInDate: lease.moveInDate ? serializeDate(lease.moveInDate) : null,
+      moveOutDate: lease.moveOutDate ? serializeDate(lease.moveOutDate) : null,
+      createdAt: serializeDate(lease.createdAt),
+      updatedAt: serializeDate(lease.updatedAt),
+    })),
+    payments: payments.map((payment) => ({
+      ...payment,
+      amount: serializeDecimal(payment.amount),
+      receivedAt: serializeDate(payment.receivedAt),
+      createdAt: serializeDate(payment.createdAt),
+      updatedAt: serializeDate(payment.updatedAt),
     })),
   });
 }
