@@ -472,7 +472,7 @@ async function requestJson<T>(input: RequestInfo | URL, init?: RequestInit): Pro
   const payload = (await response.json().catch(() => null)) as (T & { error?: string }) | null;
 
   if (!response.ok) {
-    throw new Error(payload && typeof payload === "object" && "error" in payload && payload.error ? payload.error : "Request failed");
+    throw new Error(payload && typeof payload === "object" && "error" in payload && payload.error ? payload.error : `Request failed (${response.status})`);
   }
 
   return payload as T;

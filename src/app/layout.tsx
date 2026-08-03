@@ -13,8 +13,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Property Command Center",
-  description: "A rental operations system for Kenyan properties with flexible unit structures, leases, payments, and maintenance.",
+  title: "Terava Property Management & Cleaning Services",
+  description: "Reliable property management and professional cleaning services. We manage, you earn.",
 };
 
 export default function RootLayout({

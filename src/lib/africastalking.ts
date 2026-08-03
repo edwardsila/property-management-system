@@ -84,11 +84,17 @@ export async function sendSms(to: string, message: string): Promise<SmsResult> {
     const payload = (await response.json().catch(() => null)) as AtApiEnvelope | null;
 
     if (!response.ok) {
+      const providerMessage = payload?.SMSMessageData?.Message || payload?.error || "";
+      const error =
+        response.status === 401
+          ? "Africa's Talking rejected your credentials — check AT_USERNAME and AT_API_KEY in .env"
+          : providerMessage || `Africa's Talking returned HTTP ${response.status}`;
+
       return {
         ok: false,
         statusCode: response.status,
         status: "http-error",
-        error: payload?.SMSMessageData?.Message || payload?.error || `Africa's Talking returned HTTP ${response.status}`,
+        error,
       };
     }
 

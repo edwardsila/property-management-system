@@ -1,142 +1,435 @@
 import Link from "next/link";
 
-const phases = [
+const services = [
   {
-    title: "Property onboarding",
+    title: "Property Management",
     description:
-      "Register existing buildings first, then define floors, blocks, or no-floor compounds without forcing a rigid layout.",
+      "We run your rentals end to end: tenant placement, rent collection, inspections, and reporting — so your units never sit idle.",
   },
   {
-    title: "Unit configuration",
+    title: "Professional Cleaning",
     description:
-      "Create property-specific unit types like bedsitter, 1 bedroom, shop, or single room, each with default rent and deposit.",
+      "Residential and commercial cleaning, plus thorough move-in and move-out deep cleans by vetted, insured teams.",
   },
   {
-    title: "Lease and payments",
+    title: "Tenant Vetting",
     description:
-      "Attach tenants to units through leases so you keep move-in history, arrears, and payment records clean over time.",
+      "Every applicant is background-checked and credit-checked before they sign, so you get reliable tenants who pay on time.",
   },
   {
-    title: "Automation",
+    title: "Maintenance & Repairs",
     description:
-      "Add M-Pesa reconciliation, reminders, maintenance, documents, and reports once the core operations are stable.",
+      "One call and we handle it. A network of trusted handymen keeps your property in shape and your tenants happy.",
   },
 ];
 
-const structure = [
-  "Property is the top-level record for a real-world building or compound.",
-  "Floor is optional and free-form, so ground, first, or no-floor compounds all work.",
-  "Unit type is defined per property, not globally, because naming and pricing differ from one landlord to another.",
-  "Unit keeps the actual unit name used on the ground, such as A1, House 12, or G-02.",
-  "Lease links tenant to unit and preserves history when occupants change.",
+const properties = [
+  {
+    name: "Sunrise Court Apartments",
+    location: "Westlands, Nairobi",
+    detail: "2-bedroom",
+    rent: "KES 45,000 / month",
+    gradient: "from-navy via-navy-dark to-leaf",
+  },
+  {
+    name: "Green Ridge Bungalow",
+    location: "Lavington, Nairobi",
+    detail: "3-bedroom",
+    rent: "KES 80,000 / month",
+    gradient: "from-leaf via-leaf-dark to-navy-dark",
+  },
+  {
+    name: "Terava Heights",
+    location: "Kilimani, Nairobi",
+    detail: "1-bedroom",
+    rent: "KES 32,000 / month",
+    gradient: "from-navy-darker via-navy to-leaf-dark",
+  },
 ];
 
-const sampleMetrics = [
-  { label: "Units occupied", value: "42" },
-  { label: "Current arrears", value: "KES 128,400" },
-  { label: "Properties onboarded", value: "6" },
-  { label: "Pending repairs", value: "9" },
+const reasons = [
+  {
+    title: "On-time rent collection",
+    description: "Consistent, trackable rent collection so your income arrives when it should.",
+  },
+  {
+    title: "Transparent monthly reports",
+    description: "Clear statements for every unit — what came in, what went out, and what is owed.",
+  },
+  {
+    title: "Properties that stay full",
+    description: "Proactive marketing and fast tenant placement keep your occupancy high.",
+  },
+  {
+    title: "A single point of contact",
+    description: "One team handles management and cleaning, so you never chase multiple people.",
+  },
 ];
+
+function LogoMark({ className = "", light = false }: { className?: string; light?: boolean }) {
+  const navy = light ? "#ffffff" : "#1b3a66";
+  const leaf = light ? "#7fd6a4" : "#1f8a4c";
+  const gold = light ? "#e8c458" : "#d4a72c";
+  const houseFill = light ? "rgba(255,255,255,0.06)" : "#ffffff";
+  return (
+    <svg viewBox="0 0 96 96" className={className} aria-hidden="true">
+      <circle cx="30" cy="66" r="7" fill={gold} />
+      <circle cx="30" cy="80" r="7" fill={leaf} />
+      <path
+        d="M48 8 12 40v46h72V40L48 8Z"
+        fill={houseFill}
+        stroke={navy}
+        strokeWidth="5"
+        strokeLinejoin="round"
+      />
+      <rect x="38" y="46" width="11" height="11" fill={navy} />
+      <rect x="53" y="46" width="11" height="11" fill={navy} />
+      <rect x="45" y="72" width="10" height="14" rx="1" fill={navy} />
+      <g transform="rotate(-32 74 58)">
+        <circle cx="66" cy="58" r="8" fill="none" stroke={leaf} strokeWidth="5" />
+        <rect x="70" y="54" width="18" height="6" fill={leaf} />
+        <rect x="80" y="54" width="6" height="10" fill={leaf} />
+        <rect x="88" y="54" width="6" height="8" fill={leaf} />
+      </g>
+    </svg>
+  );
+}
+
+function Wordmark({ light = false }: { light?: boolean }) {
+  return (
+    <span className="leading-none">
+      <span
+        className={`block text-2xl font-extrabold uppercase tracking-tight ${light ? "text-white" : "text-navy"}`}
+      >
+        Terava
+      </span>
+      <span
+        className={`block text-sm font-bold uppercase tracking-[0.22em] ${light ? "text-white/80" : "text-navy"}`}
+      >
+        Properties
+      </span>
+      <span className={`mt-1.5 block text-xs font-bold ${light ? "text-white/90" : "text-navy"}`}>
+        We Manage. <span className={light ? "text-[#7fd6a4]" : "text-leaf"}>You Earn.</span>
+      </span>
+    </span>
+  );
+}
 
 export default function Home() {
   return (
-    <main className="mx-auto flex w-full max-w-7xl flex-1 flex-col gap-14 px-6 py-8 sm:px-10 lg:px-12">
-      <section className="overflow-hidden rounded-[2rem] border border-amber-950/10 bg-white/80 shadow-[0_30px_100px_rgba(15,23,42,0.12)] backdrop-blur">
-        <div className="grid gap-8 px-6 py-8 lg:grid-cols-[1.3fr_0.9fr] lg:px-10 lg:py-10">
+    <main className="min-h-screen bg-white text-slate-900">
+      <header className="sticky top-0 z-50 border-b border-slate-100 bg-white/90 backdrop-blur">
+        <div className="mx-auto flex w-full max-w-7xl items-center justify-between gap-6 px-6 py-4 sm:px-10 lg:px-12">
+          <Link href="#home" className="flex items-center gap-3">
+            <LogoMark className="h-11 w-11 shrink-0" />
+            <Wordmark />
+          </Link>
+          <nav className="hidden items-center gap-8 text-sm font-semibold text-slate-600 md:flex">
+            <a href="#services" className="transition hover:text-navy">
+              Services
+            </a>
+            <a href="#properties" className="transition hover:text-navy">
+              Properties
+            </a>
+            <a href="#why" className="transition hover:text-navy">
+              Why Terava
+            </a>
+          </nav>
+          <a
+            href="#contact"
+            className="rounded-full bg-leaf px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-leaf-dark"
+          >
+            Contact us
+          </a>
+        </div>
+      </header>
+
+      <section id="home" className="relative overflow-hidden">
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute -left-24 -top-24 h-96 w-96 rounded-full bg-navy-light blur-3xl"
+        />
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute -right-24 top-40 h-80 w-80 rounded-full bg-leaf/10 blur-3xl"
+        />
+        <div className="relative mx-auto grid w-full max-w-7xl gap-12 px-6 py-16 sm:px-10 lg:grid-cols-[1.05fr_0.95fr] lg:items-center lg:px-12 lg:py-24">
           <div className="flex flex-col gap-6">
-            <div className="inline-flex w-fit items-center gap-2 rounded-full border border-amber-900/10 bg-amber-50 px-4 py-2 text-sm font-medium text-amber-900">
-              Kenya rental operations, designed for mixed building layouts
-            </div>
-            <div className="space-y-4">
-              <h1 className="max-w-3xl text-4xl font-semibold tracking-tight text-slate-950 sm:text-5xl lg:text-6xl">
-                A property system that handles real flats, real unit names, and real lease history.
-              </h1>
-              <p className="max-w-2xl text-lg leading-8 text-slate-600">
-                This build starts from the actual operational model: property onboarding first, then flexible floors, property-defined unit types, freeform unit names, and leases that keep the payment history intact.
-              </p>
-            </div>
+            <span className="inline-flex w-fit items-center rounded-full border border-navy/10 bg-navy-light px-4 py-2 text-sm font-semibold text-navy">
+              Terava Property Management &amp; Cleaning Services
+            </span>
+            <h1 className="text-5xl font-extrabold leading-[0.95] tracking-tight text-navy sm:text-6xl lg:text-7xl">
+              We Manage.
+              <br />
+              <span className="text-leaf">You Earn.</span>
+            </h1>
+            <p className="max-w-xl text-lg leading-8 text-slate-600">
+              Terava keeps your rentals full, your properties spotless, and your income on time —
+              so you can sit back and earn.
+            </p>
             <div className="flex flex-wrap gap-3">
-              <a className="rounded-full bg-slate-950 px-5 py-3 text-sm font-semibold text-white transition hover:bg-slate-800" href="#structure">
-                See the model
+              <a
+                href="#properties"
+                className="rounded-full bg-leaf px-6 py-3 text-sm font-semibold text-white transition hover:bg-leaf-dark"
+              >
+                View properties
               </a>
-              <Link className="rounded-full border border-slate-300 bg-white px-5 py-3 text-sm font-semibold text-slate-900 transition hover:border-slate-400" href="/admin">
-                Open admin shell
-              </Link>
+              <a
+                href="#services"
+                className="rounded-full border border-navy/20 bg-white px-6 py-3 text-sm font-semibold text-navy transition hover:border-navy"
+              >
+                Explore services
+              </a>
+            </div>
+            <div className="mt-2">
+              <p className="relative w-fit text-sm font-semibold text-navy">
+                Reliable Property Management You Can Trust
+                <span className="absolute -bottom-2 left-0 h-1 w-16 rounded-full bg-leaf" />
+              </p>
             </div>
           </div>
 
-          <div className="grid gap-4 rounded-[1.5rem] border border-slate-200 bg-slate-950 p-5 text-white">
-            <div className="grid grid-cols-2 gap-3">
-              {sampleMetrics.map((metric) => (
-                <div key={metric.label} className="rounded-2xl border border-white/10 bg-white/5 p-4">
-                  <div className="text-xs uppercase tracking-[0.24em] text-white/55">{metric.label}</div>
-                  <div className="mt-2 text-2xl font-semibold">{metric.value}</div>
+          <div className="rounded-[2rem] bg-white p-4 shadow-[0_30px_80px_rgba(27,58,102,0.18)] ring-1 ring-slate-100">
+            <div className="relative h-64 overflow-hidden rounded-3xl bg-gradient-to-br from-navy via-navy-dark to-leaf sm:h-72">
+              <div
+                aria-hidden="true"
+                className="absolute -right-10 -top-10 h-48 w-48 rounded-full border border-white/15"
+              />
+              <div
+                aria-hidden="true"
+                className="absolute -right-0 top-16 h-32 w-32 rounded-full border border-white/10"
+              />
+              <span className="absolute left-5 top-5 rounded-full bg-gold px-3 py-1 text-xs font-bold uppercase tracking-wide text-navy-darker">
+                Featured
+              </span>
+              <div className="absolute inset-x-5 bottom-5">
+                <p className="text-2xl font-bold text-white">Sunrise Court Apartments</p>
+                <p className="mt-1 text-sm text-white/70">Westlands, Nairobi</p>
+              </div>
+            </div>
+            <div className="grid grid-cols-3 divide-x divide-slate-100 py-5 text-center">
+              <div className="px-2">
+                <p className="text-lg font-bold text-navy">98%</p>
+                <p className="text-xs text-slate-500">Occupancy</p>
+              </div>
+              <div className="px-2">
+                <p className="text-lg font-bold text-navy">KES 45k</p>
+                <p className="text-xs text-slate-500">2-bed / month</p>
+              </div>
+              <div className="px-2">
+                <p className="text-lg font-bold text-navy">24h</p>
+                <p className="text-xs text-slate-500">Maintenance</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section id="services" className="bg-navy-light/60 py-20">
+        <div className="mx-auto w-full max-w-7xl px-6 sm:px-10 lg:px-12">
+          <div className="flex flex-col gap-3">
+            <span className="text-sm font-bold uppercase tracking-[0.24em] text-leaf">What we do</span>
+            <h2 className="max-w-2xl text-4xl font-extrabold tracking-tight text-navy">
+              Everything your property needs, handled by one trusted team.
+            </h2>
+          </div>
+          <div className="mt-12 grid gap-6 md:grid-cols-2 xl:grid-cols-4">
+            {services.map((service) => (
+              <article key={service.title} className="rounded-3xl bg-white p-6 shadow-sm ring-1 ring-slate-100">
+                <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-navy text-white">
+                  <svg viewBox="0 0 24 24" className="h-6 w-6" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <path d="M3 11.5 12 4l9 7.5" />
+                    <path d="M5.5 10v9.5h13V10" />
+                  </svg>
+                </span>
+                <h3 className="mt-5 text-lg font-bold text-navy">{service.title}</h3>
+                <p className="mt-2 text-sm leading-6 text-slate-600">{service.description}</p>
+              </article>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <section id="properties" className="py-20">
+        <div className="mx-auto w-full max-w-7xl px-6 sm:px-10 lg:px-12">
+          <div className="flex flex-col gap-3">
+            <span className="text-sm font-bold uppercase tracking-[0.24em] text-leaf">Featured properties</span>
+            <h2 className="max-w-2xl text-4xl font-extrabold tracking-tight text-navy">
+              Prime rental homes, fully managed for you.
+            </h2>
+          </div>
+          <div className="mt-12 grid gap-6 md:grid-cols-3">
+            {properties.map((property) => (
+              <article key={property.name} className="overflow-hidden rounded-3xl bg-white shadow-sm ring-1 ring-slate-100">
+                <div className={`relative h-56 bg-gradient-to-br ${property.gradient}`}>
+                  <div
+                    aria-hidden="true"
+                    className="absolute -left-8 -top-8 h-40 w-40 rounded-full border border-white/15"
+                  />
+                  <span className="absolute left-4 top-4 rounded-full bg-white/15 px-3 py-1 text-xs font-bold uppercase tracking-wide text-white backdrop-blur">
+                    For rent
+                  </span>
+                </div>
+                <div className="p-6">
+                  <h3 className="text-xl font-bold text-navy">{property.name}</h3>
+                  <p className="mt-1 text-sm text-slate-500">{property.location}</p>
+                  <div className="mt-4 flex items-center justify-between border-t border-slate-100 pt-4">
+                    <span className="text-sm font-semibold text-slate-600">{property.detail}</span>
+                    <span className="text-sm font-bold text-leaf">{property.rent}</span>
+                  </div>
+                </div>
+              </article>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <section id="why" className="bg-navy py-20 text-white">
+        <div className="mx-auto grid w-full max-w-7xl gap-12 px-6 sm:px-10 lg:grid-cols-[1.1fr_0.9fr] lg:items-center lg:px-12">
+          <div>
+            <span className="text-sm font-bold uppercase tracking-[0.24em] text-gold">Why Terava</span>
+            <h2 className="mt-3 max-w-xl text-4xl font-extrabold tracking-tight">
+              We Manage. <span className="text-[#7fd6a4]">You Earn.</span>
+            </h2>
+            <div className="mt-8 space-y-6">
+              {reasons.map((reason) => (
+                <div key={reason.title} className="flex gap-4">
+                  <span className="mt-1 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-leaf">
+                    <svg viewBox="0 0 24 24" className="h-4 w-4 text-white" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                      <path d="m5 13 4 4L19 7" />
+                    </svg>
+                  </span>
+                  <div>
+                    <h3 className="font-bold text-white">{reason.title}</h3>
+                    <p className="mt-1 text-sm leading-6 text-white/70">{reason.description}</p>
+                  </div>
                 </div>
               ))}
             </div>
-            <div className="rounded-2xl bg-gradient-to-br from-amber-500/20 to-orange-600/10 p-4">
-              <p className="text-sm leading-6 text-white/85">
-                The important part is the onboarding sequence: properties are created first, then floors or compound labels, then unit types, then individual units with the names people already use on-site.
-              </p>
+          </div>
+          <div className="rounded-[2rem] border border-white/10 bg-white/5 p-8 backdrop-blur">
+            <LogoMark className="h-16 w-16" light />
+            <p className="mt-6 text-xl font-semibold leading-8 text-white/90">
+              &ldquo;Reliable Property Management You Can Trust.&rdquo;
+            </p>
+            <span className="mt-3 block h-1 w-16 rounded-full bg-leaf" />
+          </div>
+        </div>
+      </section>
+
+      <section id="contact" className="py-20">
+        <div className="mx-auto grid w-full max-w-7xl gap-10 px-6 sm:px-10 lg:grid-cols-[0.9fr_1.1fr] lg:px-12">
+          <div>
+            <span className="text-sm font-bold uppercase tracking-[0.24em] text-leaf">Get in touch</span>
+            <h2 className="mt-3 text-4xl font-extrabold tracking-tight text-navy">
+              Ready to put your property to work?
+            </h2>
+            <p className="mt-4 text-lg leading-8 text-slate-600">
+              Whether you own one unit or an entire estate, or you need a reliable cleaning team,
+              Terava has you covered.
+            </p>
+            <div className="mt-8 space-y-4 text-sm">
+              <div className="flex items-center gap-3 text-slate-700">
+                <span className="flex h-10 w-10 items-center justify-center rounded-full bg-navy-light text-navy">
+                  <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <path d="M5 4h4l2 5-2.5 1.5a11 11 0 0 0 5 5L15 13l5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2" />
+                  </svg>
+                </span>
+                <span>+254 700 000 000</span>
+              </div>
+              <div className="flex items-center gap-3 text-slate-700">
+                <span className="flex h-10 w-10 items-center justify-center rounded-full bg-navy-light text-navy">
+                  <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <rect x="3" y="5" width="18" height="14" rx="2" />
+                    <path d="m3 7 9 6 9-6" />
+                  </svg>
+                </span>
+                <span>hello@teravaproperties.co.ke</span>
+              </div>
+              <div className="flex items-center gap-3 text-slate-700">
+                <span className="flex h-10 w-10 items-center justify-center rounded-full bg-navy-light text-navy">
+                  <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <path d="M12 21s-7-5.5-7-11a7 7 0 0 1 14 0c0 5.5-7 11-7 11Z" />
+                    <circle cx="12" cy="10" r="2.5" />
+                  </svg>
+                </span>
+                <span>Nairobi, Kenya</span>
+              </div>
+            </div>
+          </div>
+          <div className="rounded-[2rem] bg-navy-light p-8">
+            <div className="flex flex-col gap-4">
+              <div>
+                <label className="text-sm font-semibold text-navy" htmlFor="name">
+                  Full name
+                </label>
+                <input
+                  id="name"
+                  className="mt-2 w-full rounded-xl border border-navy/15 bg-white px-4 py-3 text-sm outline-none transition focus:border-navy"
+                  placeholder="Your name"
+                />
+              </div>
+              <div>
+                <label className="text-sm font-semibold text-navy" htmlFor="phone">
+                  Phone number
+                </label>
+                <input
+                  id="phone"
+                  className="mt-2 w-full rounded-xl border border-navy/15 bg-white px-4 py-3 text-sm outline-none transition focus:border-navy"
+                  placeholder="+254 ..."
+                />
+              </div>
+              <div>
+                <label className="text-sm font-semibold text-navy" htmlFor="message">
+                  How can we help?
+                </label>
+                <textarea
+                  id="message"
+                  rows={4}
+                  className="mt-2 w-full resize-none rounded-xl border border-navy/15 bg-white px-4 py-3 text-sm outline-none transition focus:border-navy"
+                  placeholder="Tell us about your property or cleaning needs"
+                />
+              </div>
+              <a
+                href="mailto:hello@teravaproperties.co.ke"
+                className="rounded-full bg-leaf px-6 py-3 text-center text-sm font-semibold text-white transition hover:bg-leaf-dark"
+              >
+                Send a request
+              </a>
             </div>
           </div>
         </div>
       </section>
 
-      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        {phases.map((phase, index) => (
-          <article key={phase.title} className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-            <div className="text-sm font-semibold text-amber-700">0{index + 1}</div>
-            <h2 className="mt-3 text-xl font-semibold text-slate-950">{phase.title}</h2>
-            <p className="mt-3 text-sm leading-7 text-slate-600">{phase.description}</p>
-          </article>
-        ))}
-      </section>
-
-      <section id="structure" className="grid gap-6 lg:grid-cols-[0.85fr_1.15fr]">
-        <div className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm">
-          <h2 className="text-2xl font-semibold text-slate-950">Modeling approach</h2>
-          <p className="mt-3 text-sm leading-7 text-slate-600">
-            This avoids hard-coding floor counts or standard apartment numbering. It lets each property be configured as it exists on the ground, which is what you need in Kenyan rental stock.
+      <footer className="bg-navy-darker py-14 text-white">
+        <div className="mx-auto flex w-full max-w-7xl flex-col gap-10 px-6 sm:px-10 lg:flex-row lg:items-start lg:justify-between lg:px-12">
+          <div className="flex items-center gap-3">
+            <LogoMark className="h-12 w-12 shrink-0" light />
+            <Wordmark light />
+          </div>
+          <div className="flex flex-col gap-3 text-sm text-white/70 sm:flex-row sm:gap-12">
+            <div className="flex flex-col gap-2">
+              <span className="font-bold text-white">Company</span>
+              <a href="#services" className="transition hover:text-white">Services</a>
+              <a href="#properties" className="transition hover:text-white">Properties</a>
+              <a href="#why" className="transition hover:text-white">Why Terava</a>
+            </div>
+            <div className="flex flex-col gap-2">
+              <span className="font-bold text-white">Contact</span>
+              <a href="tel:+254700000000" className="transition hover:text-white">+254 700 000 000</a>
+              <a href="mailto:hello@teravaproperties.co.ke" className="transition hover:text-white">
+                hello@teravaproperties.co.ke
+              </a>
+              <span>Nairobi, Kenya</span>
+            </div>
+          </div>
+        </div>
+        <div className="mx-auto mt-10 w-full max-w-7xl border-t border-white/10 px-6 pt-6 sm:px-10 lg:px-12">
+          <p className="text-xs text-white/50">
+            &copy; {new Date().getFullYear()} Terava Property Management &amp; Cleaning Services. We Manage. You Earn.
           </p>
-          <div className="mt-6 space-y-4">
-            {structure.map((item) => (
-              <div key={item} className="flex gap-3 rounded-2xl bg-slate-50 p-4 text-sm leading-6 text-slate-700">
-                <span className="mt-1 h-2.5 w-2.5 rounded-full bg-amber-500" />
-                <span>{item}</span>
-              </div>
-            ))}
-          </div>
         </div>
-
-        <div className="rounded-[2rem] border border-slate-200 bg-slate-950 p-6 text-white shadow-sm">
-          <div className="flex items-center justify-between gap-4">
-            <div>
-              <div className="text-sm font-medium text-white/60">Admin shell</div>
-              <h2 className="mt-2 text-2xl font-semibold">The system surfaces</h2>
-            </div>
-            <div className="rounded-full border border-white/10 bg-white/5 px-4 py-2 text-xs uppercase tracking-[0.24em] text-white/60">
-              next step
-            </div>
-          </div>
-          <div className="mt-6 grid gap-4 md:grid-cols-2">
-            {[
-              "Properties and floors",
-              "Unit types and naming",
-              "Tenant onboarding and leases",
-              "Payments, arrears, reminders",
-              "Maintenance requests",
-              "Reports and exports",
-              "Public inquiry listings",
-              "Documents and media",
-            ].map((item) => (
-              <div key={item} className="rounded-2xl border border-white/10 bg-white/5 p-4 text-sm text-white/85">
-                {item}
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
+      </footer>
     </main>
   );
 }
