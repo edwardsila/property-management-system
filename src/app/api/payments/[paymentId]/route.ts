@@ -17,18 +17,30 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ pa
   const tenantId = getString(body.tenantId);
   const amount = getString(body.amount);
 
+  if (!leaseId || !tenantId || !amount) {
+    return jsonError("Lease, tenant, and amount are required");
+  }
+
+  const data: Record<string, unknown> = {
+    leaseId,
+    tenantId,
+    amount,
+    method: (body.method as PaymentMethod | undefined) ?? "CASH",
+    status: (body.status as PaymentStatus | undefined) ?? "CONFIRMED",
+    notes: getString(body.notes) || null,
+  };
+
+  if (body.receivedAt) {
+    data.receivedAt = new Date(body.receivedAt);
+  }
+
+  if (body.reference !== undefined) {
+    data.reference = getString(body.reference) || null;
+  }
+
   const payment = await prisma.payment.update({
     where: { id: paymentId },
-    data: {
-      leaseId,
-      tenantId,
-      amount,
-      method: (body.method as PaymentMethod | undefined) ?? "CASH",
-      status: (body.status as PaymentStatus | undefined) ?? "CONFIRMED",
-      reference: getString(body.reference) || null,
-      receivedAt: body.receivedAt ? new Date(body.receivedAt) : new Date(),
-      notes: getString(body.notes) || null,
-    },
+    data,
   });
 
   return NextResponse.json({ payment });

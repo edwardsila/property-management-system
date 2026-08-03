@@ -12,6 +12,7 @@ export type MessageContext = {
   balance: number;
   dueDate: Date;
   customBody?: string;
+  amount?: number;
 };
 
 export function composeMessageBody(type: MessageType, context: MessageContext) {
@@ -23,7 +24,9 @@ export function composeMessageBody(type: MessageType, context: MessageContext) {
     case "BALANCE":
       return `Hi ${context.tenantName}, your outstanding balance for ${unit} is ${formatMoney(Math.max(0, context.balance))}. Kindly settle your account soon.`;
     case "PAYMENT_RECEIVED":
-      return `Hi ${context.tenantName}, we confirm receipt of your payment for ${unit}. Thank you.`;
+      return context.amount
+        ? `Hi ${context.tenantName}, we confirm receipt of ${formatMoney(context.amount)} for ${unit}. Thank you.`
+        : `Hi ${context.tenantName}, we confirm receipt of your payment for ${unit}. Thank you.`;
     default:
       return context.customBody ?? "";
   }

@@ -102,6 +102,28 @@ type Payment = {
   notes: string | null;
 };
 
+type IncomingPaymentStatus = "UNMATCHED" | "MATCHED" | "DISCARDED";
+
+type IncomingPayment = {
+  id: string;
+  propertyId: string | null;
+  tenantId: string | null;
+  leaseId: string | null;
+  amount: string;
+  method: PaymentMethod;
+  source: string;
+  phone: string;
+  reference: string | null;
+  transactionId: string | null;
+  receivedAt: string;
+  status: IncomingPaymentStatus;
+  matchNote: string | null;
+  notes: string | null;
+  matchedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
 type MessageType = "RENT_DUE" | "BALANCE" | "PAYMENT_RECEIVED" | "MANUAL";
 type MessageChannel = "SMS" | "EMAIL";
 type MessageStatus = "QUEUED" | "SENT" | "FAILED";
@@ -171,6 +193,7 @@ type BootstrapPayload = {
   leases: Lease[];
   payments: Payment[];
   messages: Message[];
+  incoming: IncomingPayment[];
 };
 
 const propertyTypes: Array<{ label: string; value: PropertyType }> = [
@@ -238,7 +261,7 @@ const reportTypes: Array<{ label: string; value: ReportType }> = [
 const messageTypeExamples: Record<MessageType, string> = {
   RENT_DUE: "Hi John, your rent of KES 7,500 for A1 is due by 28 Aug 2026. Please pay on time to keep your account in good standing.",
   BALANCE: "Hi John, your outstanding balance for A1 is KES 7,500. Kindly settle your account soon.",
-  PAYMENT_RECEIVED: "Hi John, we confirm receipt of your payment for A1. Thank you.",
+  PAYMENT_RECEIVED: "Hi John, we confirm receipt of KES 7,500 for A1. Thank you.",
   MANUAL: "Write your own message. The tenant name and unit are not inserted automatically.",
 };
 
@@ -265,6 +288,9 @@ const badgeColors: Record<string, string> = {
   QUEUED: "border-amber-500/30 bg-amber-500/10 text-amber-300",
   SENT: "border-emerald-500/30 bg-emerald-500/10 text-emerald-300",
   FAILED: "border-rose-500/30 bg-rose-500/10 text-rose-300",
+  UNMATCHED: "border-amber-500/30 bg-amber-500/10 text-amber-300",
+  MATCHED: "border-emerald-500/30 bg-emerald-500/10 text-emerald-300",
+  DISCARDED: "border-slate-500/30 bg-slate-500/10 text-slate-300",
 };
 
 function money(value: string | number | null | undefined) {
@@ -494,6 +520,7 @@ const sectionLabels: Record<string, string> = {
   tenants: "Tenants",
   leases: "Leases",
   payments: "Payments",
+  incoming: "Incoming",
   messages: "Messages",
   reports: "Reports",
 };
@@ -510,6 +537,7 @@ export default function AdminPage() {
   const [leases, setLeases] = useState<Lease[]>([]);
   const [payments, setPayments] = useState<Payment[]>([]);
   const [messages, setMessages] = useState<Message[]>([]);
+  const [incoming, setIncoming] = useState<IncomingPayment[]>([]);
   const [selectedPropertyId, setSelectedPropertyId] = useState("");
 
   const [propertyForm, setPropertyForm] = useState<Property>(emptyProperty());
@@ -519,6 +547,9 @@ export default function AdminPage() {
   const [tenantForm, setTenantForm] = useState<Tenant>(emptyTenant());
   const [leaseForm, setLeaseForm] = useState<Lease>(emptyLease());
   const [paymentForm, setPaymentForm] = useState<Payment>(emptyPayment());
+  const [paymentSendSms, setPaymentSendSms] = useState(true);
+  const [incomingForm, setIncomingForm] = useState({ phone: "", amount: "", method: "MPESA" as PaymentMethod, reference: "" });
+  const [incomingMapping, setIncomingMapping] = useState<Record<string, { tenantId: string; leaseId: string }>>({});
 
   const [editingPropertyId, setEditingPropertyId] = useState("");
   const [editingFloorId, setEditingFloorId] = useState("");
@@ -606,6 +637,7 @@ export default function AdminPage() {
         setLeases(data.leases);
         setPayments(data.payments);
         setMessages(data.messages);
+        setIncoming(data.incoming);
         setSms(data.sms);
 
         const firstId = data.properties[0]?.id ?? "";
@@ -638,6 +670,7 @@ export default function AdminPage() {
   const propertyTenants = useMemo(() => tenants.filter((tenant) => tenant.propertyId === selectedPropertyId), [selectedPropertyId, tenants]);
   const propertyLeases = useMemo(() => leases.filter((lease) => lease.propertyId === selectedPropertyId), [leases, selectedPropertyId]);
   const propertyPayments = useMemo(() => payments.filter((payment) => payment.propertyId === selectedPropertyId), [payments, selectedPropertyId]);
+  const propertyIncoming = useMemo(() => incoming.filter((item) => item.propertyId === selectedPropertyId), [incoming, selectedPropertyId]);
   const propertyMessages = useMemo(() => messages.filter((message) => message.propertyId === selectedPropertyId), [messages, selectedPropertyId]);
 
   const activeLeasesCount = useMemo(() => leases.filter((lease) => lease.status === "ACTIVE").length, [leases]);
@@ -746,6 +779,7 @@ export default function AdminPage() {
     setLeases(data.leases);
     setPayments(data.payments);
     setMessages(data.messages);
+    setIncoming(data.incoming);
     setSelectedPropertyId((current) => current || data.properties[0]?.id || "");
   }
 
@@ -959,15 +993,114 @@ export default function AdminPage() {
         await submitJson(`/api/payments/${editingPaymentId}`, "PATCH", paymentForm);
         notify("success", "Payment updated");
       } else {
-        await submitJson(`/api/properties/${paymentForm.propertyId}/payments`, "POST", paymentForm);
-        notify("success", "Payment recorded");
+        await submitJson(`/api/properties/${paymentForm.propertyId}/payments`, "POST", {
+          ...paymentForm,
+          sendSms: paymentSendSms,
+        });
+        notify("success", paymentSendSms ? "Payment recorded and receipt SMS sent" : "Payment recorded");
       }
 
       await refresh();
       setEditingPaymentId("");
       setPaymentForm(emptyPayment(selectedPropertyId));
+      setPaymentSendSms(true);
     } catch (requestError) {
       notify("error", requestError instanceof Error ? requestError.message : "Unable to save payment");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleIncomingSubmit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    if (!selectedPropertyId) {
+      notify("error", "Select a property workspace first");
+      return;
+    }
+
+    const phoneErrorText = phoneError(incomingForm.phone);
+
+    if (phoneErrorText) {
+      notify("error", phoneErrorText);
+      return;
+    }
+
+    if (!Number(incomingForm.amount) || Number(incomingForm.amount) <= 0) {
+      notify("error", "Enter a valid payment amount");
+      return;
+    }
+
+    setSaving(true);
+
+    try {
+      const result = await requestJson<{ matched: boolean; reason: string | null; payment: { id: string } | null; incoming: IncomingPayment | null }>(
+        "/api/payments/incoming",
+        {
+          method: "POST",
+          body: JSON.stringify({
+            propertyId: selectedPropertyId,
+            phone: incomingForm.phone,
+            amount: incomingForm.amount,
+            method: incomingForm.method,
+            reference: incomingForm.reference,
+          }),
+        },
+      );
+
+      if (result.matched) {
+        notify("success", "Payment matched to a tenant and receipt SMS sent");
+      } else {
+        notify("error", result.reason ?? "Payment queued for manual mapping");
+      }
+
+      setIncomingForm({ phone: "", amount: "", method: "MPESA", reference: "" });
+      await refresh();
+    } catch (requestError) {
+      notify("error", requestError instanceof Error ? requestError.message : "Unable to record incoming payment");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function confirmIncomingPayment(incomingId: string, sendSms: boolean) {
+    const selection = incomingMapping[incomingId];
+
+    if (!selection?.tenantId || !selection?.leaseId) {
+      notify("error", "Select a tenant and a lease before confirming");
+      return;
+    }
+
+    setSaving(true);
+
+    try {
+      await requestJson(`/api/payments/incoming/${incomingId}`, {
+        method: "PATCH",
+        body: JSON.stringify({ action: "confirm", ...selection, sendSms }),
+      });
+
+      notify("success", sendSms ? "Payment confirmed and receipt SMS sent" : "Payment confirmed (no SMS)");
+      await refresh();
+    } catch (requestError) {
+      notify("error", requestError instanceof Error ? requestError.message : "Unable to confirm payment");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function discardIncomingPayment(incomingId: string) {
+    setSaving(true);
+
+    try {
+      await requestJson(`/api/payments/incoming/${incomingId}`, {
+        method: "PATCH",
+        body: JSON.stringify({ action: "discard", reason: "Discarded by administrator" }),
+      });
+
+      notify("success", "Payment discarded");
+      await refresh();
+    } catch (requestError) {
+      notify("error", requestError instanceof Error ? requestError.message : "Unable to discard payment");
     } finally {
       setSaving(false);
     }
@@ -1314,6 +1447,31 @@ export default function AdminPage() {
                 search={paymentSearch}
                 setSearch={setPaymentSearch}
                 deleteResource={deleteResource}
+                sendSms={paymentSendSms}
+                setSendSms={setPaymentSendSms}
+              />
+            </SectionCard>
+          ) : null}
+
+          {activeSection === "incoming" ? (
+            <SectionCard
+              title="Incoming payments"
+              description="M-Pesa and bank payments waiting to be matched. Auto-matched payments are reconciled and a receipt SMS is sent automatically; unmatched ones wait here for confirmation."
+            >
+              <IncomingManager
+                saving={saving}
+                selectedPropertyId={selectedPropertyId}
+                incoming={propertyIncoming}
+                tenants={propertyTenants}
+                leases={propertyLeases}
+                units={propertyUnits}
+                form={incomingForm}
+                setForm={setIncomingForm}
+                mapping={incomingMapping}
+                setMapping={setIncomingMapping}
+                onAdd={handleIncomingSubmit}
+                onConfirm={confirmIncomingPayment}
+                onDiscard={discardIncomingPayment}
               />
             </SectionCard>
           ) : null}
@@ -2078,6 +2236,8 @@ function PaymentManager({
   search,
   setSearch,
   deleteResource,
+  sendSms,
+  setSendSms,
 }: {
   loading: boolean;
   saving: boolean;
@@ -2094,6 +2254,8 @@ function PaymentManager({
   search: string;
   setSearch: (value: string) => void;
   deleteResource: (path: string) => Promise<void>;
+  sendSms: boolean;
+  setSendSms: (value: boolean) => void;
 }) {
   if (!selectedPropertyId) {
     return <EmptyState text="Select a property workspace to manage payments." />;
@@ -2154,6 +2316,19 @@ function PaymentManager({
         <Field label="Notes">
           <textarea className={`${inputClass} min-h-24`} value={paymentForm.notes ?? ""} onChange={(event) => setPaymentForm((current) => ({ ...current, notes: event.target.value }))} />
         </Field>
+        {!editingPaymentId ? (
+          <label className="flex items-start gap-2 rounded-md border border-slate-800 bg-slate-950 px-3 py-2.5 text-sm text-slate-300">
+            <input
+              type="checkbox"
+              checked={sendSms}
+              onChange={(event) => setSendSms(event.target.checked)}
+              className="mt-0.5 h-4 w-4 accent-emerald-500"
+            />
+            <span>
+              Send a payment confirmation SMS to the tenant (receipt includes the amount and unit).
+            </span>
+          </label>
+        ) : null}
         <div className="flex flex-wrap gap-3">
           <button className={primaryButtonClass} type="submit" disabled={saving || loading}>{saving ? "Saving..." : editingPaymentId ? "Save payment" : "Record payment"}</button>
           <button className={secondaryButtonClass} type="button" onClick={() => { setPaymentForm(emptyPayment(selectedPropertyId)); setEditingPaymentId(""); }}>Clear</button>
@@ -2202,6 +2377,205 @@ function PaymentManager({
           </Table>
         )}
       </div>
+    </div>
+  );
+}
+
+function IncomingManager({
+  saving,
+  selectedPropertyId,
+  incoming,
+  tenants,
+  leases,
+  units,
+  form,
+  setForm,
+  mapping,
+  setMapping,
+  onAdd,
+  onConfirm,
+  onDiscard,
+}: {
+  saving: boolean;
+  selectedPropertyId: string;
+  incoming: IncomingPayment[];
+  tenants: Tenant[];
+  leases: Lease[];
+  units: Unit[];
+  form: { phone: string; amount: string; method: PaymentMethod; reference: string };
+  setForm: React.Dispatch<React.SetStateAction<{ phone: string; amount: string; method: PaymentMethod; reference: string }>>;
+  mapping: Record<string, { tenantId: string; leaseId: string }>;
+  setMapping: React.Dispatch<React.SetStateAction<Record<string, { tenantId: string; leaseId: string }>>>;
+  onAdd: (event: React.FormEvent<HTMLFormElement>) => Promise<void>;
+  onConfirm: (incomingId: string, sendSms: boolean) => Promise<void>;
+  onDiscard: (incomingId: string) => Promise<void>;
+}) {
+  if (!selectedPropertyId) {
+    return <EmptyState text="Select a property workspace to reconcile incoming payments." />;
+  }
+
+  const unmatched = incoming.filter((item) => item.status === "UNMATCHED");
+  const matched = incoming.filter((item) => item.status === "MATCHED");
+  const discarded = incoming.filter((item) => item.status === "DISCARDED");
+
+  const unmatchedTotal = unmatched.reduce((total, item) => total + Number(item.amount || 0), 0);
+
+  function tenantName(id: string | null) {
+    return tenants.find((tenant) => tenant.id === id)?.fullName ?? "—";
+  }
+
+  function unitName(leaseId: string | null) {
+    const lease = leases.find((item) => item.id === leaseId);
+    return lease ? units.find((unit) => unit.id === lease.unitId)?.unitName ?? "—" : "—";
+  }
+
+  return (
+    <div className="grid gap-6">
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <div className="rounded-md border border-slate-800 bg-slate-950 p-4">
+          <div className="text-xs uppercase tracking-wide text-slate-500">Awaiting mapping</div>
+          <div className="mt-2 text-xl font-semibold text-amber-300">{unmatched.length}</div>
+        </div>
+        <div className="rounded-md border border-slate-800 bg-slate-950 p-4">
+          <div className="text-xs uppercase tracking-wide text-slate-500">Unmatched value</div>
+          <div className="mt-2 text-xl font-semibold text-slate-50">{money(String(unmatchedTotal))}</div>
+        </div>
+        <div className="rounded-md border border-slate-800 bg-slate-950 p-4">
+          <div className="text-xs uppercase tracking-wide text-slate-500">Auto-matched</div>
+          <div className="mt-2 text-xl font-semibold text-emerald-300">{matched.length}</div>
+        </div>
+        <div className="rounded-md border border-slate-800 bg-slate-950 p-4">
+          <div className="text-xs uppercase tracking-wide text-slate-500">Discarded</div>
+          <div className="mt-2 text-xl font-semibold text-slate-400">{discarded.length}</div>
+        </div>
+      </div>
+
+      <div className="grid gap-6 xl:grid-cols-[0.9fr_1.1fr]">
+        <form className="grid gap-4" onSubmit={onAdd}>
+          <div className="grid gap-4 md:grid-cols-2">
+            <Field label="Phone number">
+              <input className={inputClass} value={form.phone} onChange={(event) => setForm((current) => ({ ...current, phone: event.target.value }))} placeholder="0712 345 678" />
+            </Field>
+            <Field label="Amount">
+              <input className={inputClass} type="number" value={form.amount} onChange={(event) => setForm((current) => ({ ...current, amount: event.target.value }))} placeholder="e.g. 7500" />
+            </Field>
+          </div>
+          <div className="grid gap-4 md:grid-cols-2">
+            <Field label="Method">
+              <select className={inputClass} value={form.method} onChange={(event) => setForm((current) => ({ ...current, method: event.target.value as PaymentMethod }))}>
+                {paymentMethods.map((method) => <option key={method.value} value={method.value}>{method.label}</option>)}
+              </select>
+            </Field>
+            <Field label="Reference">
+              <input className={inputClass} value={form.reference} onChange={(event) => setForm((current) => ({ ...current, reference: event.target.value }))} placeholder="Receipt / ref code (optional)" />
+            </Field>
+          </div>
+          <div className="rounded-md border border-slate-800 bg-slate-950 px-3 py-2 text-xs text-slate-400">
+            Recording a payment here attempts to auto-match it to a tenant by phone number. If it matches, it is reconciled and a receipt SMS is sent. Otherwise it lands in the queue below for manual mapping.
+          </div>
+          <button className={primaryButtonClass} type="submit" disabled={saving}>{saving ? "Saving..." : "Record incoming payment"}</button>
+        </form>
+
+        <div className="grid gap-3">
+          <div className="flex items-center justify-between">
+            <div className="text-sm font-semibold text-slate-300">Awaiting mapping</div>
+            <div className="text-xs text-slate-500">{unmatched.length} payment{unmatched.length === 1 ? "" : "s"}</div>
+          </div>
+          {unmatched.length === 0 ? <EmptyState text="No incoming payments waiting for mapping." /> : (
+            <Table>
+              <thead>
+                <tr>
+                  <Th>Date</Th>
+                  <Th>Phone</Th>
+                  <Th className="text-right">Amount</Th>
+                  <Th>Method</Th>
+                  <Th>Reference</Th>
+                  <Th>Why unmatched</Th>
+                  <Th>Map to</Th>
+                  <Th className="text-right">Actions</Th>
+                </tr>
+              </thead>
+              <tbody>
+                {unmatched.map((item) => {
+                  const selection = mapping[item.id] ?? { tenantId: "", leaseId: "" };
+
+                  return (
+                    <tr key={item.id}>
+                      <Td className="whitespace-nowrap">{formatDateTime(item.receivedAt)}</Td>
+                      <Td>{item.phone}</Td>
+                      <Td className="text-right font-medium text-slate-50">{money(item.amount)}</Td>
+                      <Td><StatusBadge value={item.method} /></Td>
+                      <Td className="max-w-[140px]"><div className="truncate" title={item.reference ?? ""}>{item.reference ?? "—"}</div></Td>
+                      <Td className="max-w-[180px] text-xs text-amber-300/90">{item.matchNote ?? "—"}</Td>
+                      <Td>
+                        <div className="grid gap-2">
+                          <select
+                            className={inputClass}
+                            value={selection.tenantId}
+                            onChange={(event) => setMapping((current) => ({ ...current, [item.id]: { ...selection, tenantId: event.target.value } }))}
+                          >
+                            <option value="">Select tenant</option>
+                            {tenants.map((tenant) => <option key={tenant.id} value={tenant.id}>{tenant.fullName} · {tenant.phone}</option>)}
+                          </select>
+                          <select
+                            className={inputClass}
+                            value={selection.leaseId}
+                            onChange={(event) => setMapping((current) => ({ ...current, [item.id]: { ...selection, leaseId: event.target.value } }))}
+                          >
+                            <option value="">Select lease</option>
+                            {leases.map((lease) => <option key={lease.id} value={lease.id}>{leaseLabel(lease, units, tenants)}</option>)}
+                          </select>
+                        </div>
+                      </Td>
+                      <Td className="text-right">
+                        <div className="flex flex-col items-end gap-2">
+                          <button className={primaryButtonClass} type="button" disabled={saving} onClick={() => onConfirm(item.id, true)}>
+                            Confirm + SMS
+                          </button>
+                          <button className={secondaryButtonClass} type="button" disabled={saving} onClick={() => onConfirm(item.id, false)}>
+                            Confirm (no SMS)
+                          </button>
+                          <ConfirmButton onConfirm={() => onDiscard(item.id)}>Discard</ConfirmButton>
+                        </div>
+                      </Td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </Table>
+          )}
+        </div>
+      </div>
+
+      {matched.length > 0 ? (
+        <div className="grid gap-3">
+          <div className="text-sm font-semibold text-slate-300">Recently reconciled</div>
+          <Table>
+            <thead>
+              <tr>
+                <Th>Date</Th>
+                <Th>Tenant</Th>
+                <Th>Unit</Th>
+                <Th className="text-right">Amount</Th>
+                <Th>Method</Th>
+                <Th>Matched</Th>
+              </tr>
+            </thead>
+            <tbody>
+              {matched.map((item) => (
+                <tr key={item.id}>
+                  <Td className="whitespace-nowrap">{formatDateTime(item.receivedAt)}</Td>
+                  <Td className="font-medium text-slate-50">{tenantName(item.tenantId)}</Td>
+                  <Td>{unitName(item.leaseId)}</Td>
+                  <Td className="text-right">{money(item.amount)}</Td>
+                  <Td><StatusBadge value={item.method} /></Td>
+                  <Td className="text-xs text-slate-400">{item.matchNote ?? "—"}</Td>
+                </tr>
+              ))}
+            </tbody>
+          </Table>
+        </div>
+      ) : null}
     </div>
   );
 }

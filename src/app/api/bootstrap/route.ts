@@ -10,6 +10,7 @@ type TenantRecord = Awaited<ReturnType<typeof prisma.tenant.findMany>>[number];
 type LeaseRecord = Awaited<ReturnType<typeof prisma.lease.findMany>>[number];
 type PaymentRecord = Awaited<ReturnType<typeof prisma.payment.findMany>>[number];
 type MessageRecord = Awaited<ReturnType<typeof prisma.message.findMany>>[number];
+type IncomingPaymentRecord = Awaited<ReturnType<typeof prisma.incomingPayment.findMany>>[number];
 
 function serializeDate(value: Date) {
   return value.toISOString();
@@ -20,7 +21,7 @@ function serializeDecimal(value: unknown) {
 }
 
 export async function GET() {
-  const [properties, floors, unitTypes, units, tenants, leases, payments, messages]: [
+  const [properties, floors, unitTypes, units, tenants, leases, payments, messages, incoming]: [
     PropertyRecord[],
     FloorRecord[],
     UnitTypeRecord[],
@@ -29,6 +30,7 @@ export async function GET() {
     LeaseRecord[],
     PaymentRecord[],
     MessageRecord[],
+    IncomingPaymentRecord[],
   ] = await Promise.all([
     prisma.property.findMany({ orderBy: [{ createdAt: "asc" }] }),
     prisma.floor.findMany({ orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }] }),
@@ -38,6 +40,7 @@ export async function GET() {
     prisma.lease.findMany({ orderBy: [{ createdAt: "asc" }] }),
     prisma.payment.findMany({ orderBy: [{ receivedAt: "desc" }] }),
     prisma.message.findMany({ orderBy: [{ createdAt: "desc" }], take: 100 }),
+    prisma.incomingPayment.findMany({ orderBy: [{ status: "asc" }, { receivedAt: "desc" }], take: 200 }),
   ]);
 
   const smsConfig = getSmsConfig();
@@ -101,6 +104,14 @@ export async function GET() {
       sentAt: message.sentAt ? serializeDate(message.sentAt) : null,
       createdAt: serializeDate(message.createdAt),
       updatedAt: serializeDate(message.updatedAt),
+    })),
+    incoming: incoming.map((item) => ({
+      ...item,
+      amount: serializeDecimal(item.amount),
+      receivedAt: serializeDate(item.receivedAt),
+      matchedAt: item.matchedAt ? serializeDate(item.matchedAt) : null,
+      createdAt: serializeDate(item.createdAt),
+      updatedAt: serializeDate(item.updatedAt),
     })),
   });
 }

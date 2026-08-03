@@ -48,6 +48,12 @@ enum PaymentStatus {
   REVERSED
 }
 
+enum IncomingPaymentStatus {
+  UNMATCHED
+  MATCHED
+  DISCARDED
+}
+
 enum MaintenanceStatus {
   OPEN
   IN_PROGRESS
@@ -328,6 +334,31 @@ model Expense {
   property Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
 
   @@index([propertyId, occurredAt])
+}
+
+model IncomingPayment {
+  id            String                @id @default(cuid())
+  propertyId    String?
+  tenantId      String?
+  leaseId       String?
+  amount        Decimal
+  method        PaymentMethod         @default(MPESA)
+  source        String                @default("MANUAL")
+  phone         String
+  reference     String?
+  transactionId String?
+  receivedAt    DateTime              @default(now())
+  status        IncomingPaymentStatus @default(UNMATCHED)
+  matchNote     String?
+  notes         String?
+  matchedAt     DateTime?
+  createdAt     DateTime              @default(now())
+  updatedAt     DateTime              @updatedAt
+
+  @@index([status, createdAt])
+  @@index([propertyId, status])
+  @@index([phone])
+  @@index([transactionId])
 }
 
 model Inquiry {
