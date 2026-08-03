@@ -72,6 +72,24 @@ enum InquiryStatus {
   CLOSED
 }
 
+enum MessageType {
+  RENT_DUE
+  BALANCE
+  PAYMENT_RECEIVED
+  MANUAL
+}
+
+enum MessageChannel {
+  SMS
+  EMAIL
+}
+
+enum MessageStatus {
+  QUEUED
+  SENT
+  FAILED
+}
+
 model User {
   id              String   @id @default(cuid())
   name            String
@@ -113,6 +131,7 @@ model Property {
   inquiries  Inquiry[]
   documents  Document[]
   reminders  Reminder[]
+  messages   Message[]
 }
 
 model Floor {
@@ -195,6 +214,7 @@ model Tenant {
   payments  Payment[]
   requests  MaintenanceRequest[]
   inquiries Inquiry[]
+  messages  Message[]
 
   @@index([propertyId, fullName])
 }
@@ -220,6 +240,7 @@ model Lease {
   unit     Unit     @relation(fields: [unitId], references: [id], onDelete: Restrict)
   tenant   Tenant   @relation(fields: [tenantId], references: [id], onDelete: Restrict)
   payments Payment[]
+  messages Message[]
 
   @@index([propertyId, status])
   @@index([unitId, status])
@@ -267,6 +288,29 @@ model MaintenanceRequest {
   tenant   Tenant?  @relation(fields: [tenantId], references: [id], onDelete: SetNull)
 
   @@index([propertyId, status])
+}
+
+model Message {
+  id         String         @id @default(cuid())
+  propertyId String
+  tenantId   String?
+  leaseId    String?
+  type       MessageType    @default(MANUAL)
+  channel    MessageChannel @default(SMS)
+  provider   String?
+  subject    String?
+  body       String
+  status     MessageStatus  @default(QUEUED)
+  error      String?
+  sentAt     DateTime?
+  createdAt  DateTime       @default(now())
+  updatedAt  DateTime       @updatedAt
+
+  property Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  tenant   Tenant?  @relation(fields: [tenantId], references: [id], onDelete: SetNull)
+  lease    Lease?   @relation(fields: [leaseId], references: [id], onDelete: SetNull)
+
+  @@index([propertyId, createdAt])
 }
 
 model Expense {

@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { isValidKenyanMobile, parseKenyanPhone } from "@/lib/phone";
 
 type PropertyType =
   | "APARTMENT_BLOCK"
@@ -101,7 +102,67 @@ type Payment = {
   notes: string | null;
 };
 
+type MessageType = "RENT_DUE" | "BALANCE" | "PAYMENT_RECEIVED" | "MANUAL";
+type MessageChannel = "SMS" | "EMAIL";
+type MessageStatus = "QUEUED" | "SENT" | "FAILED";
+type RecipientMode = "ALL_TENANTS" | "IN_ARREARS" | "SPECIFIC";
+
+type Message = {
+  id: string;
+  propertyId: string;
+  tenantId: string | null;
+  leaseId: string | null;
+  type: MessageType;
+  channel: MessageChannel;
+  provider: string | null;
+  subject: string | null;
+  body: string;
+  status: MessageStatus;
+  error: string | null;
+  sentAt: string | null;
+  createdAt: string;
+};
+
+type ReportType = "rent-collection" | "arrears" | "occupancy" | "tenant-statement" | "payment-summary";
+
+type RentCollectionReport = {
+  type: "rent-collection";
+  month: string;
+  rows: Array<{ id: string; receivedAt: string; tenant: string; unit: string; method: PaymentMethod; amount: number; reference: string | null }>;
+  summary: { totalCollected: number; expectedRent: number; collectionRate: number; byMethod: Array<{ method: string; total: number }>; paymentCount: number };
+};
+
+type ArrearsReport = {
+  type: "arrears";
+  rows: Array<{ leaseId: string; unit: string; tenant: string; phone: string; monthlyRent: number; months: number; accrued: number; paid: number; balance: number; graceDays: number }>;
+  summary: { totalArrears: number; count: number };
+};
+
+type OccupancyReport = {
+  type: "occupancy";
+  rows: Array<{ id: string; unitName: string; floor: string | null; unitType: string | null; status: UnitStatus; tenant: string | null }>;
+  summary: { totalUnits: number; occupied: number; vacant: number; occupancyRate: number; byStatus: Array<{ status: string; count: number }> };
+};
+
+type TenantStatementReport = {
+  type: "tenant-statement";
+  tenant: { id: string; fullName: string; phone: string; email: string | null };
+  leases: Array<{ leaseId: string; unit: string; status: LeaseStatus; monthlyRent: number; startDate: string; months: number; accrued: number; paid: number; balance: number }>;
+  payments: Array<{ id: string; receivedAt: string; amount: number; method: PaymentMethod; status: PaymentStatus; reference: string | null }>;
+  summary: { confirmedPaid: number };
+};
+
+type PaymentSummaryReport = {
+  type: "payment-summary";
+  month: string | null;
+  rows: Array<{ id: string; receivedAt: string; tenant: string; unit: string; method: PaymentMethod; status: PaymentStatus; amount: number; reference: string | null }>;
+  summary: { totalCollected: number; byMethod: Array<{ method: string; total: number }>; byStatus: Array<{ status: string; count: number }> };
+};
+
+type ReportResult = RentCollectionReport | ArrearsReport | OccupancyReport | TenantStatementReport | PaymentSummaryReport;
+
 type BootstrapPayload = {
+  sms: { configured: boolean; mode: "africastalking" | "simulated"; senderId: string | null };
   properties: Property[];
   floors: Floor[];
   unitTypes: UnitType[];
@@ -109,6 +170,7 @@ type BootstrapPayload = {
   tenants: Tenant[];
   leases: Lease[];
   payments: Payment[];
+  messages: Message[];
 };
 
 const propertyTypes: Array<{ label: string; value: PropertyType }> = [
@@ -147,6 +209,39 @@ const paymentStatuses: Array<{ label: string; value: PaymentStatus }> = [
   { label: "Reversed", value: "REVERSED" },
 ];
 
+const messageTypes: Array<{ label: string; value: MessageType }> = [
+  { label: "Rent due", value: "RENT_DUE" },
+  { label: "Balance reminder", value: "BALANCE" },
+  { label: "Payment received", value: "PAYMENT_RECEIVED" },
+  { label: "Manual message", value: "MANUAL" },
+];
+
+const messageChannels: Array<{ label: string; value: MessageChannel }> = [
+  { label: "SMS", value: "SMS" },
+  { label: "Email", value: "EMAIL" },
+];
+
+const recipientModes: Array<{ label: string; value: RecipientMode }> = [
+  { label: "All tenants", value: "ALL_TENANTS" },
+  { label: "Tenants in arrears", value: "IN_ARREARS" },
+  { label: "Specific tenant", value: "SPECIFIC" },
+];
+
+const reportTypes: Array<{ label: string; value: ReportType }> = [
+  { label: "Rent collection", value: "rent-collection" },
+  { label: "Arrears", value: "arrears" },
+  { label: "Occupancy", value: "occupancy" },
+  { label: "Tenant statement", value: "tenant-statement" },
+  { label: "Payment summary", value: "payment-summary" },
+];
+
+const messageTypeExamples: Record<MessageType, string> = {
+  RENT_DUE: "Hi John, your rent of KES 7,500 for A1 is due by 28 Aug 2026. Please pay on time to keep your account in good standing.",
+  BALANCE: "Hi John, your outstanding balance for A1 is KES 7,500. Kindly settle your account soon.",
+  PAYMENT_RECEIVED: "Hi John, we confirm receipt of your payment for A1. Thank you.",
+  MANUAL: "Write your own message. The tenant name and unit are not inserted automatically.",
+};
+
 const badgeColors: Record<string, string> = {
   ACTIVE: "border-emerald-500/30 bg-emerald-500/10 text-emerald-300",
   CONFIRMED: "border-emerald-500/30 bg-emerald-500/10 text-emerald-300",
@@ -163,9 +258,16 @@ const badgeColors: Record<string, string> = {
   BANK: "border-blue-500/30 bg-blue-500/10 text-blue-300",
   CASH: "border-slate-500/30 bg-slate-500/10 text-slate-300",
   OTHER: "border-slate-500/30 bg-slate-500/10 text-slate-300",
+  RENT_DUE: "border-amber-500/30 bg-amber-500/10 text-amber-300",
+  BALANCE: "border-rose-500/30 bg-rose-500/10 text-rose-300",
+  PAYMENT_RECEIVED: "border-emerald-500/30 bg-emerald-500/10 text-emerald-300",
+  MANUAL: "border-sky-500/30 bg-sky-500/10 text-sky-300",
+  QUEUED: "border-amber-500/30 bg-amber-500/10 text-amber-300",
+  SENT: "border-emerald-500/30 bg-emerald-500/10 text-emerald-300",
+  FAILED: "border-rose-500/30 bg-rose-500/10 text-rose-300",
 };
 
-function money(value: string | null | undefined) {
+function money(value: string | number | null | undefined) {
   const parsed = Number(value || 0);
 
   if (Number.isNaN(parsed)) {
@@ -243,6 +345,12 @@ function isSameMonth(value: string, now: Date) {
   const date = new Date(value);
 
   return date.getFullYear() === now.getFullYear() && date.getMonth() === now.getMonth();
+}
+
+function currentMonthString() {
+  const now = new Date();
+
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
 }
 
 function emptyProperty(): Property {
@@ -370,12 +478,24 @@ async function requestJson<T>(input: RequestInfo | URL, init?: RequestInit): Pro
   return payload as T;
 }
 
+function phoneError(input: string) {
+  const value = input.trim();
+
+  if (!value) {
+    return "";
+  }
+
+  return isValidKenyanMobile(value) ? "" : "Enter a valid Kenyan mobile number (e.g. 0712 345 678 or +254712345678).";
+}
+
 const sectionLabels: Record<string, string> = {
   properties: "Properties",
   units: "Units",
   tenants: "Tenants",
   leases: "Leases",
   payments: "Payments",
+  messages: "Messages",
+  reports: "Reports",
 };
 
 type SectionId = keyof typeof sectionLabels;
@@ -389,6 +509,7 @@ export default function AdminPage() {
   const [tenants, setTenants] = useState<Tenant[]>([]);
   const [leases, setLeases] = useState<Lease[]>([]);
   const [payments, setPayments] = useState<Payment[]>([]);
+  const [messages, setMessages] = useState<Message[]>([]);
   const [selectedPropertyId, setSelectedPropertyId] = useState("");
 
   const [propertyForm, setPropertyForm] = useState<Property>(emptyProperty());
@@ -415,6 +536,23 @@ export default function AdminPage() {
   const [tenantSearch, setTenantSearch] = useState("");
   const [unitSearch, setUnitSearch] = useState("");
   const [paymentSearch, setPaymentSearch] = useState("");
+
+  const [messageForm, setMessageForm] = useState({
+    type: "RENT_DUE" as MessageType,
+    channel: "SMS" as MessageChannel,
+    recipients: "ALL_TENANTS" as RecipientMode,
+    tenantId: "",
+    body: "",
+  });
+
+  const [reportType, setReportType] = useState<ReportType>("rent-collection");
+  const [reportMonth, setReportMonth] = useState(currentMonthString());
+  const [reportTenantId, setReportTenantId] = useState("");
+  const [reportData, setReportData] = useState<ReportResult | null>(null);
+  const [reportLoading, setReportLoading] = useState(false);
+  const [reportError, setReportError] = useState<string | null>(null);
+  const [sms, setSms] = useState<BootstrapPayload["sms"]>({ configured: false, mode: "simulated", senderId: null });
+  const [testingPhone, setTestingPhone] = useState(false);
 
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -445,6 +583,7 @@ export default function AdminPage() {
   function onSelectProperty(propertyId: string) {
     setSelectedPropertyId(propertyId);
     resetForms(propertyId);
+    resetReport();
   }
 
   useEffect(() => {
@@ -466,6 +605,8 @@ export default function AdminPage() {
         setTenants(data.tenants);
         setLeases(data.leases);
         setPayments(data.payments);
+        setMessages(data.messages);
+        setSms(data.sms);
 
         const firstId = data.properties[0]?.id ?? "";
         setSelectedPropertyId(firstId);
@@ -497,6 +638,7 @@ export default function AdminPage() {
   const propertyTenants = useMemo(() => tenants.filter((tenant) => tenant.propertyId === selectedPropertyId), [selectedPropertyId, tenants]);
   const propertyLeases = useMemo(() => leases.filter((lease) => lease.propertyId === selectedPropertyId), [leases, selectedPropertyId]);
   const propertyPayments = useMemo(() => payments.filter((payment) => payment.propertyId === selectedPropertyId), [payments, selectedPropertyId]);
+  const propertyMessages = useMemo(() => messages.filter((message) => message.propertyId === selectedPropertyId), [messages, selectedPropertyId]);
 
   const activeLeasesCount = useMemo(() => leases.filter((lease) => lease.status === "ACTIVE").length, [leases]);
   const confirmedMpesaPayments = useMemo(
@@ -603,6 +745,7 @@ export default function AdminPage() {
     setTenants(data.tenants);
     setLeases(data.leases);
     setPayments(data.payments);
+    setMessages(data.messages);
     setSelectedPropertyId((current) => current || data.properties[0]?.id || "");
   }
 
@@ -733,14 +876,34 @@ export default function AdminPage() {
       return;
     }
 
+    const mainPhoneError = phoneError(tenantForm.phone);
+
+    if (mainPhoneError) {
+      notify("error", mainPhoneError);
+      return;
+    }
+
+    if (tenantForm.nextOfKinPhone?.trim() && phoneError(tenantForm.nextOfKinPhone)) {
+      notify("error", "Next of kin phone must be a valid Kenyan mobile number (e.g. 0712 345 678).");
+      return;
+    }
+
     setSaving(true);
 
     try {
+      const payload = {
+        ...tenantForm,
+        phone: parseKenyanPhone(tenantForm.phone) ?? tenantForm.phone.trim(),
+        nextOfKinPhone: tenantForm.nextOfKinPhone?.trim()
+          ? (parseKenyanPhone(tenantForm.nextOfKinPhone) ?? tenantForm.nextOfKinPhone.trim())
+          : "",
+      };
+
       if (editingTenantId) {
-        await submitJson(`/api/tenants/${editingTenantId}`, "PATCH", tenantForm);
+        await submitJson(`/api/tenants/${editingTenantId}`, "PATCH", payload);
         notify("success", "Tenant updated");
       } else {
-        await submitJson(`/api/properties/${tenantForm.propertyId}/tenants`, "POST", tenantForm);
+        await submitJson(`/api/properties/${tenantForm.propertyId}/tenants`, "POST", payload);
         notify("success", "Tenant created");
       }
 
@@ -822,6 +985,115 @@ export default function AdminPage() {
     } finally {
       setSaving(false);
     }
+  }
+
+  async function handleSendMessages() {
+    if (!selectedPropertyId) {
+      return;
+    }
+
+    if (messageForm.recipients === "SPECIFIC" && !messageForm.tenantId) {
+      notify("error", "Select a tenant to message");
+      return;
+    }
+
+    if (messageForm.type === "MANUAL" && !messageForm.body.trim()) {
+      notify("error", "Write the message text first");
+      return;
+    }
+
+    setSaving(true);
+
+    try {
+      const result = await requestJson<{ count: number; messages: Array<{ status: MessageStatus }> }>("/api/messages", {
+        method: "POST",
+        body: JSON.stringify({
+          propertyId: selectedPropertyId,
+          type: messageForm.type,
+          channel: messageForm.channel,
+          recipients: messageForm.recipients,
+          tenantId: messageForm.tenantId,
+          body: messageForm.body,
+        }),
+      });
+
+      const failed = result.messages.filter((message) => message.status === "FAILED").length;
+      const sent = result.messages.length - failed;
+
+      if (sent > 0 && failed === 0) {
+        notify("success", `${sent} message${sent === 1 ? "" : "s"} sent`);
+      } else if (sent > 0 && failed > 0) {
+        notify("error", `${sent} sent, ${failed} failed`);
+      } else {
+        notify("error", "No messages were delivered");
+      }
+
+      await refresh();
+    } catch (requestError) {
+      notify("error", requestError instanceof Error ? requestError.message : "Unable to send messages");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleSendTestSms(phone: string) {
+    const error = phoneError(phone);
+
+    if (error) {
+      notify("error", error);
+      return;
+    }
+
+    setTestingPhone(true);
+
+    try {
+      await requestJson<{ ok: boolean; phone: string; messageId: string | null }>("/api/messages/verify", {
+        method: "POST",
+        body: JSON.stringify({ phone, propertyName: selectedProperty?.name ?? "" }),
+      });
+
+      notify("success", "Test SMS accepted by Africa's Talking for delivery.");
+    } catch (requestError) {
+      notify("error", requestError instanceof Error ? requestError.message : "Unable to send test SMS");
+    } finally {
+      setTestingPhone(false);
+    }
+  }
+
+  async function generateReport() {
+    if (!selectedPropertyId) {
+      notify("error", "Select a property workspace first");
+      return;
+    }
+
+    setReportLoading(true);
+    setReportError(null);
+
+    try {
+      const params = new URLSearchParams({ type: reportType, propertyId: selectedPropertyId });
+
+      if (reportType === "rent-collection" || reportType === "payment-summary") {
+        params.set("month", reportMonth);
+      }
+
+      if (reportType === "tenant-statement") {
+        params.set("tenantId", reportTenantId);
+      }
+
+      const data = await requestJson<ReportResult>(`/api/reports?${params.toString()}`);
+      setReportData(data);
+    } catch (requestError) {
+      setReportError(requestError instanceof Error ? requestError.message : "Unable to generate report");
+      setReportData(null);
+    } finally {
+      setReportLoading(false);
+    }
+  }
+
+  function resetReport() {
+    setReportData(null);
+    setReportError(null);
+    setReportTenantId("");
   }
 
   return (
@@ -993,6 +1265,8 @@ export default function AdminPage() {
                 editingTenantId={editingTenantId}
                 setEditingTenantId={setEditingTenantId}
                 handleTenantSubmit={handleTenantSubmit}
+                handleSendTestSms={handleSendTestSms}
+                testingPhone={testingPhone}
                 tenants={propertyTenants}
                 leases={propertyLeases}
                 units={propertyUnits}
@@ -1040,6 +1314,41 @@ export default function AdminPage() {
                 search={paymentSearch}
                 setSearch={setPaymentSearch}
                 deleteResource={deleteResource}
+              />
+            </SectionCard>
+          ) : null}
+
+          {activeSection === "messages" ? (
+            <SectionCard title="Messaging" description="Send rent due, balance, payment confirmation, or manual messages to tenants.">
+              <MessageManager
+                loading={loading}
+                saving={saving}
+                selectedPropertyId={selectedPropertyId}
+                messageForm={messageForm}
+                setMessageForm={setMessageForm}
+                handleSendMessages={handleSendMessages}
+                sms={sms}
+                tenants={propertyTenants}
+                messages={propertyMessages}
+              />
+            </SectionCard>
+          ) : null}
+
+          {activeSection === "reports" ? (
+            <SectionCard title="Reports" description="Generate operational reports for the selected property.">
+              <ReportsManager
+                loading={reportLoading}
+                selectedPropertyId={selectedPropertyId}
+                reportType={reportType}
+                setReportType={setReportType}
+                reportMonth={reportMonth}
+                setReportMonth={setReportMonth}
+                reportTenantId={reportTenantId}
+                setReportTenantId={setReportTenantId}
+                generateReport={generateReport}
+                tenants={propertyTenants}
+                data={reportData}
+                error={reportError}
               />
             </SectionCard>
           ) : null}
@@ -1498,6 +1807,8 @@ function TenantManager({
   editingTenantId,
   setEditingTenantId,
   handleTenantSubmit,
+  handleSendTestSms,
+  testingPhone,
   tenants,
   leases,
   units,
@@ -1513,6 +1824,8 @@ function TenantManager({
   editingTenantId: string;
   setEditingTenantId: (value: string) => void;
   handleTenantSubmit: (event: React.FormEvent<HTMLFormElement>) => Promise<void>;
+  handleSendTestSms: (phone: string) => Promise<void>;
+  testingPhone: boolean;
   tenants: Tenant[];
   leases: Lease[];
   units: Unit[];
@@ -1548,7 +1861,13 @@ function TenantManager({
             <input className={inputClass} value={tenantForm.fullName} onChange={(event) => setTenantForm((current) => ({ ...current, fullName: event.target.value }))} />
           </Field>
           <Field label="Phone">
-            <input className={inputClass} value={tenantForm.phone} onChange={(event) => setTenantForm((current) => ({ ...current, phone: event.target.value }))} />
+            <input className={inputClass} value={tenantForm.phone} onChange={(event) => setTenantForm((current) => ({ ...current, phone: event.target.value }))} placeholder="e.g. 0712 345 678" />
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              <button className={secondaryButtonClass} type="button" disabled={testingPhone || !tenantForm.phone.trim()} onClick={() => handleSendTestSms(tenantForm.phone)}>
+                {testingPhone ? "Sending..." : "Send test SMS"}
+              </button>
+              <span className="text-xs text-slate-500">Kenyan mobile number (07X / 01X). SMS alerts are sent via Africa&apos;s Talking.</span>
+            </div>
           </Field>
         </div>
         <div className="grid gap-4 md:grid-cols-2">
@@ -1564,7 +1883,7 @@ function TenantManager({
             <input className={inputClass} value={tenantForm.nextOfKinName ?? ""} onChange={(event) => setTenantForm((current) => ({ ...current, nextOfKinName: event.target.value }))} />
           </Field>
           <Field label="Next of kin phone">
-            <input className={inputClass} value={tenantForm.nextOfKinPhone ?? ""} onChange={(event) => setTenantForm((current) => ({ ...current, nextOfKinPhone: event.target.value }))} />
+            <input className={inputClass} value={tenantForm.nextOfKinPhone ?? ""} onChange={(event) => setTenantForm((current) => ({ ...current, nextOfKinPhone: event.target.value }))} placeholder="e.g. 0700 000 000 (optional)" />
           </Field>
         </div>
         <Field label="Notes">
@@ -1883,6 +2202,481 @@ function PaymentManager({
           </Table>
         )}
       </div>
+    </div>
+  );
+}
+
+function MessageManager({
+  loading,
+  saving,
+  selectedPropertyId,
+  messageForm,
+  setMessageForm,
+  handleSendMessages,
+  sms,
+  tenants,
+  messages,
+}: {
+  loading: boolean;
+  saving: boolean;
+  selectedPropertyId: string;
+  messageForm: { type: MessageType; channel: MessageChannel; recipients: RecipientMode; tenantId: string; body: string };
+  setMessageForm: React.Dispatch<React.SetStateAction<{ type: MessageType; channel: MessageChannel; recipients: RecipientMode; tenantId: string; body: string }>>;
+  handleSendMessages: () => Promise<void>;
+  sms: { configured: boolean; mode: "africastalking" | "simulated"; senderId: string | null };
+  tenants: Tenant[];
+  messages: Message[];
+}) {
+  if (!selectedPropertyId) {
+    return <EmptyState text="Select a property workspace to send messages." />;
+  }
+
+  return (
+    <div className="grid gap-6 xl:grid-cols-[0.9fr_1.1fr]">
+      <form className="grid gap-4" onSubmit={(event) => { event.preventDefault(); handleSendMessages(); }}>
+        <div className={`rounded-md border px-3 py-2 text-xs ${sms.configured ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-300" : "border-amber-500/30 bg-amber-500/10 text-amber-300"}`}>
+          {sms.configured
+            ? `SMS via Africa's Talking${sms.senderId ? ` from ${sms.senderId}` : ""}. Messages are delivered for real.`
+            : "SMS is in simulated mode — set AT_USERNAME and AT_API_KEY in your environment to send real Africa's Talking messages."}
+        </div>
+        <div className="grid gap-4 md:grid-cols-2">
+          <Field label="Message type">
+            <select className={inputClass} value={messageForm.type} onChange={(event) => setMessageForm((current) => ({ ...current, type: event.target.value as MessageType }))}>
+              {messageTypes.map((type) => <option key={type.value} value={type.value}>{type.label}</option>)}
+            </select>
+          </Field>
+          <Field label="Channel">
+            <select className={inputClass} value={messageForm.channel} onChange={(event) => setMessageForm((current) => ({ ...current, channel: event.target.value as MessageChannel }))}>
+              {messageChannels.map((channel) => <option key={channel.value} value={channel.value}>{channel.label}</option>)}
+            </select>
+          </Field>
+        </div>
+
+        <Field label="Recipients">
+          <select className={inputClass} value={messageForm.recipients} onChange={(event) => setMessageForm((current) => ({ ...current, recipients: event.target.value as RecipientMode }))}>
+            {recipientModes.map((mode) => <option key={mode.value} value={mode.value}>{mode.label}</option>)}
+          </select>
+        </Field>
+
+        {messageForm.recipients === "SPECIFIC" ? (
+          <Field label="Tenant">
+            <select className={inputClass} value={messageForm.tenantId} onChange={(event) => setMessageForm((current) => ({ ...current, tenantId: event.target.value }))}>
+              <option value="">Select tenant</option>
+              {tenants.map((tenant) => <option key={tenant.id} value={tenant.id}>{tenant.fullName} · {tenant.phone}</option>)}
+            </select>
+          </Field>
+        ) : null}
+
+        {messageForm.type === "MANUAL" ? (
+          <Field label="Message text">
+            <textarea className={`${inputClass} min-h-28`} value={messageForm.body} onChange={(event) => setMessageForm((current) => ({ ...current, body: event.target.value }))} placeholder="Write the message that will be sent to each selected tenant." />
+          </Field>
+        ) : null}
+
+        <div className="rounded-md border border-slate-800 bg-slate-950 p-4 text-sm text-slate-400">
+          <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-500">Template preview</div>
+          {messageTypeExamples[messageForm.type]}
+        </div>
+
+        <div className="flex flex-wrap gap-3">
+          <button className={primaryButtonClass} type="submit" disabled={saving || loading}>{saving ? "Sending..." : "Send messages"}</button>
+        </div>
+      </form>
+
+      <div className="grid gap-3">
+        <div className="text-sm text-slate-400">{messages.length} message{messages.length === 1 ? "" : "s"} sent</div>
+        {messages.length === 0 ? <EmptyState text="No messages sent yet for this property." /> : (
+          <Table>
+            <thead>
+              <tr>
+                <Th>Date</Th>
+                <Th>Tenant</Th>
+                <Th>Type</Th>
+                <Th>Channel</Th>
+                <Th>Status</Th>
+                <Th>Message</Th>
+              </tr>
+            </thead>
+            <tbody>
+              {messages.map((message) => {
+                const tenant = tenants.find((item) => item.id === message.tenantId);
+
+                return (
+                  <tr key={message.id}>
+                    <Td className="whitespace-nowrap">{formatDateTime(message.sentAt ?? message.createdAt)}</Td>
+                    <Td className="font-medium text-slate-50">{tenant?.fullName ?? "—"}</Td>
+                    <Td><StatusBadge value={message.type}>{message.type.replace(/_/g, " ")}</StatusBadge></Td>
+                    <Td>{message.channel}</Td>
+                    <Td>
+                      <StatusBadge value={message.status} />
+                      {message.status === "FAILED" && message.error ? (
+                        <div className="mt-1 max-w-[180px] text-[11px] leading-tight text-rose-400" title={message.error}>{message.error}</div>
+                      ) : null}
+                    </Td>
+                    <Td className="max-w-[280px]">
+                      <div className="line-clamp-2 text-xs text-slate-400">{message.body}</div>
+                      <div className="mt-1 text-[11px] text-slate-500">
+                        {message.provider === "africastalking" ? "via Africa's Talking" : message.provider === "simulated" ? "simulated" : message.channel}
+                      </div>
+                    </Td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </Table>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function ReportsManager({
+  loading,
+  selectedPropertyId,
+  reportType,
+  setReportType,
+  reportMonth,
+  setReportMonth,
+  reportTenantId,
+  setReportTenantId,
+  generateReport,
+  tenants,
+  data,
+  error,
+}: {
+  loading: boolean;
+  selectedPropertyId: string;
+  reportType: ReportType;
+  setReportType: (value: ReportType) => void;
+  reportMonth: string;
+  setReportMonth: (value: string) => void;
+  reportTenantId: string;
+  setReportTenantId: (value: string) => void;
+  generateReport: () => Promise<void>;
+  tenants: Tenant[];
+  data: ReportResult | null;
+  error: string | null;
+}) {
+  if (!selectedPropertyId) {
+    return <EmptyState text="Select a property workspace to generate reports." />;
+  }
+
+  const needsMonth = reportType === "rent-collection" || reportType === "payment-summary";
+  const needsTenant = reportType === "tenant-statement";
+
+  return (
+    <div className="grid gap-6">
+      <div className="grid gap-4 lg:grid-cols-[1fr_1fr_1fr_auto]">
+        <Field label="Report type">
+          <select className={inputClass} value={reportType} onChange={(event) => setReportType(event.target.value as ReportType)}>
+            {reportTypes.map((type) => <option key={type.value} value={type.value}>{type.label}</option>)}
+          </select>
+        </Field>
+
+        {needsMonth ? (
+          <Field label="Month">
+            <input className={inputClass} type="month" value={reportMonth} onChange={(event) => setReportMonth(event.target.value)} />
+          </Field>
+        ) : null}
+
+        {needsTenant ? (
+          <Field label="Tenant">
+            <select className={inputClass} value={reportTenantId} onChange={(event) => setReportTenantId(event.target.value)}>
+              <option value="">Select tenant</option>
+              {tenants.map((tenant) => <option key={tenant.id} value={tenant.id}>{tenant.fullName}</option>)}
+            </select>
+          </Field>
+        ) : null}
+
+        <div className="flex items-end">
+          <button className={primaryButtonClass} type="button" onClick={generateReport} disabled={loading}>
+            {loading ? "Generating..." : "Generate report"}
+          </button>
+        </div>
+      </div>
+
+      {error ? <div className="rounded-md border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">{error}</div> : null}
+
+      {data ? <ReportView data={data} /> : null}
+    </div>
+  );
+}
+
+function ReportView({ data }: { data: ReportResult }) {
+  switch (data.type) {
+    case "rent-collection":
+      return <RentCollectionView report={data} />;
+    case "arrears":
+      return <ArrearsView report={data} />;
+    case "occupancy":
+      return <OccupancyView report={data} />;
+    case "tenant-statement":
+      return <TenantStatementView report={data} />;
+    case "payment-summary":
+      return <PaymentSummaryView report={data} />;
+  }
+}
+
+function ReportCard({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-md border border-slate-800 bg-slate-950 p-4">
+      <div className="text-xs uppercase tracking-wide text-slate-500">{label}</div>
+      <div className="mt-2 text-xl font-semibold text-slate-50">{value}</div>
+    </div>
+  );
+}
+
+function MethodChips({ items }: { items: Array<{ method: string; total: number }> }) {
+  return (
+    <div className="flex flex-wrap gap-2">
+      {items.map((item) => (
+        <span key={item.method} className="inline-flex items-center gap-2 rounded-md border border-slate-800 bg-slate-950 px-3 py-1.5 text-sm text-slate-300">
+          <StatusBadge value={item.method}>{item.method.replace(/_/g, " ")}</StatusBadge>
+          {money(item.total)}
+        </span>
+      ))}
+    </div>
+  );
+}
+
+function BalanceCell({ value }: { value: number }) {
+  return <span className={value > 0 ? "font-medium text-rose-300" : "text-emerald-300"}>{money(value)}</span>;
+}
+
+function RentCollectionView({ report }: { report: RentCollectionReport }) {
+  return (
+    <div className="grid gap-4">
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <ReportCard label="Collected" value={money(report.summary.totalCollected)} />
+        <ReportCard label="Expected rent" value={money(report.summary.expectedRent)} />
+        <ReportCard label="Collection rate" value={`${Math.round(report.summary.collectionRate)}%`} />
+        <ReportCard label="Payments" value={String(report.summary.paymentCount)} />
+      </div>
+      <MethodChips items={report.summary.byMethod} />
+      <Table>
+        <thead>
+          <tr>
+            <Th>Date</Th>
+            <Th>Tenant</Th>
+            <Th>Unit</Th>
+            <Th className="text-right">Amount</Th>
+            <Th>Method</Th>
+            <Th>Reference</Th>
+          </tr>
+        </thead>
+        <tbody>
+          {report.rows.map((row) => (
+            <tr key={row.id}>
+              <Td className="whitespace-nowrap">{formatDateTime(row.receivedAt)}</Td>
+              <Td className="font-medium text-slate-50">{row.tenant}</Td>
+              <Td>{row.unit}</Td>
+              <Td className="text-right">{money(row.amount)}</Td>
+              <Td><StatusBadge value={row.method} /></Td>
+              <Td>{row.reference ?? "—"}</Td>
+            </tr>
+          ))}
+        </tbody>
+      </Table>
+    </div>
+  );
+}
+
+function ArrearsView({ report }: { report: ArrearsReport }) {
+  return (
+    <div className="grid gap-4">
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <ReportCard label="Total arrears" value={money(report.summary.totalArrears)} />
+        <ReportCard label="Tenants in arrears" value={String(report.summary.count)} />
+      </div>
+      {report.rows.length === 0 ? <EmptyState text="No tenants are currently in arrears." /> : (
+        <Table>
+          <thead>
+            <tr>
+              <Th>Tenant</Th>
+              <Th>Phone</Th>
+              <Th>Unit</Th>
+              <Th className="text-right">Rent</Th>
+              <Th className="text-right">Months</Th>
+              <Th className="text-right">Accrued</Th>
+              <Th className="text-right">Paid</Th>
+              <Th className="text-right">Balance</Th>
+            </tr>
+          </thead>
+          <tbody>
+            {report.rows.map((row) => (
+              <tr key={row.leaseId}>
+                <Td className="font-medium text-slate-50">{row.tenant}</Td>
+                <Td>{row.phone}</Td>
+                <Td>{row.unit}</Td>
+                <Td className="text-right">{money(row.monthlyRent)}</Td>
+                <Td className="text-right">{row.months}</Td>
+                <Td className="text-right">{money(row.accrued)}</Td>
+                <Td className="text-right">{money(row.paid)}</Td>
+                <Td className="text-right"><BalanceCell value={row.balance} /></Td>
+              </tr>
+            ))}
+          </tbody>
+        </Table>
+      )}
+    </div>
+  );
+}
+
+function OccupancyView({ report }: { report: OccupancyReport }) {
+  return (
+    <div className="grid gap-4">
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <ReportCard label="Total units" value={String(report.summary.totalUnits)} />
+        <ReportCard label="Occupied" value={String(report.summary.occupied)} />
+        <ReportCard label="Vacant" value={String(report.summary.vacant)} />
+        <ReportCard label="Occupancy rate" value={`${Math.round(report.summary.occupancyRate)}%`} />
+      </div>
+      <div className="flex flex-wrap gap-2">
+        {report.summary.byStatus.map((item) => (
+          <span key={item.status} className="inline-flex items-center gap-2 rounded-md border border-slate-800 bg-slate-950 px-3 py-1.5 text-sm text-slate-300">
+            <StatusBadge value={item.status}>{item.status.replace(/_/g, " ")}</StatusBadge>
+            {item.count}
+          </span>
+        ))}
+      </div>
+      <Table>
+        <thead>
+          <tr>
+            <Th>Unit</Th>
+            <Th>Floor</Th>
+            <Th>Type</Th>
+            <Th>Status</Th>
+            <Th>Tenant</Th>
+          </tr>
+        </thead>
+        <tbody>
+          {report.rows.map((row) => (
+            <tr key={row.id}>
+              <Td className="font-medium text-slate-50">{row.unitName}</Td>
+              <Td>{row.floor ?? "—"}</Td>
+              <Td>{row.unitType ?? "—"}</Td>
+              <Td><StatusBadge value={row.status} /></Td>
+              <Td>{row.tenant ?? "—"}</Td>
+            </tr>
+          ))}
+        </tbody>
+      </Table>
+    </div>
+  );
+}
+
+function TenantStatementView({ report }: { report: TenantStatementReport }) {
+  return (
+    <div className="grid gap-4">
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <ReportCard label="Tenant" value={report.tenant.fullName} />
+        <ReportCard label="Phone" value={report.tenant.phone} />
+        <ReportCard label="Email" value={report.tenant.email ?? "—"} />
+        <ReportCard label="Confirmed paid" value={money(report.summary.confirmedPaid)} />
+      </div>
+
+      <div className="text-sm font-semibold text-slate-300">Leases</div>
+      {report.leases.length === 0 ? <EmptyState text="No leases for this tenant." /> : (
+        <Table>
+          <thead>
+            <tr>
+              <Th>Unit</Th>
+              <Th>Status</Th>
+              <Th className="text-right">Rent</Th>
+              <Th>Start</Th>
+              <Th className="text-right">Months</Th>
+              <Th className="text-right">Accrued</Th>
+              <Th className="text-right">Paid</Th>
+              <Th className="text-right">Balance</Th>
+            </tr>
+          </thead>
+          <tbody>
+            {report.leases.map((lease) => (
+              <tr key={lease.leaseId}>
+                <Td className="font-medium text-slate-50">{lease.unit}</Td>
+                <Td><StatusBadge value={lease.status} /></Td>
+                <Td className="text-right">{money(lease.monthlyRent)}</Td>
+                <Td>{formatDate(lease.startDate)}</Td>
+                <Td className="text-right">{lease.months}</Td>
+                <Td className="text-right">{money(lease.accrued)}</Td>
+                <Td className="text-right">{money(lease.paid)}</Td>
+                <Td className="text-right"><BalanceCell value={lease.balance} /></Td>
+              </tr>
+            ))}
+          </tbody>
+        </Table>
+      )}
+
+      <div className="text-sm font-semibold text-slate-300">Payments</div>
+      {report.payments.length === 0 ? <EmptyState text="No payments recorded for this tenant." /> : (
+        <Table>
+          <thead>
+            <tr>
+              <Th>Date</Th>
+              <Th className="text-right">Amount</Th>
+              <Th>Method</Th>
+              <Th>Status</Th>
+              <Th>Reference</Th>
+            </tr>
+          </thead>
+          <tbody>
+            {report.payments.map((payment) => (
+              <tr key={payment.id}>
+                <Td className="whitespace-nowrap">{formatDateTime(payment.receivedAt)}</Td>
+                <Td className="text-right">{money(payment.amount)}</Td>
+                <Td><StatusBadge value={payment.method} /></Td>
+                <Td><StatusBadge value={payment.status} /></Td>
+                <Td>{payment.reference ?? "—"}</Td>
+              </tr>
+            ))}
+          </tbody>
+        </Table>
+      )}
+    </div>
+  );
+}
+
+function PaymentSummaryView({ report }: { report: PaymentSummaryReport }) {
+  return (
+    <div className="grid gap-4">
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <ReportCard label="Collected" value={money(report.summary.totalCollected)} />
+      </div>
+      <MethodChips items={report.summary.byMethod} />
+      <div className="flex flex-wrap gap-2">
+        {report.summary.byStatus.map((item) => (
+          <span key={item.status} className="inline-flex items-center gap-2 rounded-md border border-slate-800 bg-slate-950 px-3 py-1.5 text-sm text-slate-300">
+            <StatusBadge value={item.status}>{item.status.replace(/_/g, " ")}</StatusBadge>
+            {item.count}
+          </span>
+        ))}
+      </div>
+      <Table>
+        <thead>
+          <tr>
+            <Th>Date</Th>
+            <Th>Tenant</Th>
+            <Th>Unit</Th>
+            <Th className="text-right">Amount</Th>
+            <Th>Method</Th>
+            <Th>Status</Th>
+            <Th>Reference</Th>
+          </tr>
+        </thead>
+        <tbody>
+          {report.rows.map((row) => (
+            <tr key={row.id}>
+              <Td className="whitespace-nowrap">{formatDateTime(row.receivedAt)}</Td>
+              <Td className="font-medium text-slate-50">{row.tenant}</Td>
+              <Td>{row.unit}</Td>
+              <Td className="text-right">{money(row.amount)}</Td>
+              <Td><StatusBadge value={row.method} /></Td>
+              <Td><StatusBadge value={row.status} /></Td>
+              <Td>{row.reference ?? "—"}</Td>
+            </tr>
+          ))}
+        </tbody>
+      </Table>
     </div>
   );
 }

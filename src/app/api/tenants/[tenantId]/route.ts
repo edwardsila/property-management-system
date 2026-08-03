@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getString, jsonError } from "../../_shared";
+import { isValidKenyanMobile, parseKenyanPhone } from "@/lib/phone";
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ tenantId: string }> }) {
   const { tenantId } = await params;
@@ -11,7 +12,24 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ te
   }
 
   const fullName = getString(body.fullName);
-  const phone = getString(body.phone);
+  const phoneRaw = getString(body.phone);
+
+  if (!fullName || !phoneRaw) {
+    return jsonError("Tenant name and phone are required");
+  }
+
+  if (!isValidKenyanMobile(phoneRaw)) {
+    return jsonError("Phone must be a valid Kenyan mobile number (e.g. 0712 345 678 or +254712345678)");
+  }
+
+  const phone = parseKenyanPhone(phoneRaw) as string;
+  const nextOfKinPhoneRaw = getString(body.nextOfKinPhone);
+
+  if (nextOfKinPhoneRaw && !isValidKenyanMobile(nextOfKinPhoneRaw)) {
+    return jsonError("Next of kin phone must be a valid Kenyan mobile number");
+  }
+
+  const nextOfKinPhone = nextOfKinPhoneRaw ? (parseKenyanPhone(nextOfKinPhoneRaw) as string) : null;
 
   const tenant = await prisma.tenant.update({
     where: { id: tenantId },
@@ -21,7 +39,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ te
       email: getString(body.email) || null,
       nationalId: getString(body.nationalId) || null,
       nextOfKinName: getString(body.nextOfKinName) || null,
-      nextOfKinPhone: getString(body.nextOfKinPhone) || null,
+      nextOfKinPhone,
       notes: getString(body.notes) || null,
     },
   });
