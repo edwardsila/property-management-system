@@ -634,11 +634,11 @@ export default function AdminPage() {
         <aside className="sticky top-4 flex h-fit flex-col gap-6 rounded-[1.5rem] border border-slate-800 bg-slate-900/95 p-5 shadow-[0_20px_70px_rgba(0,0,0,0.35)] backdrop-blur">
           <div>
             <div className="inline-flex w-fit items-center gap-2 rounded-full border border-amber-500/20 bg-amber-500/10 px-4 py-2 text-xs font-medium text-amber-300">
-              Operations dashboard
+              Terava Properties.
             </div>
             <h1 className="mt-4 text-2xl font-semibold tracking-tight text-slate-50">Property Command Center</h1>
             <p className="mt-3 text-sm leading-6 text-slate-400">
-              Full-width workspace for properties, units, tenants, leases, and collections.
+              Property workspace.
             </p>
           </div>
 
