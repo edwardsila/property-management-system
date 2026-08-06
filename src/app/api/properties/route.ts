@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getString, jsonError } from "../_shared";
+import { ensureAdminUser, requireAdmin } from "@/lib/auth";
 
 type PropertyType =
   | "APARTMENT_BLOCK"
@@ -10,26 +11,24 @@ type PropertyType =
   | "MIXED_USE"
   | "OTHER";
 
-const bootstrapOwner = {
-  name: "Default Owner",
-  email: "owner@property.local",
-  role: "OWNER",
-} as const;
-
-async function ensureOwner() {
-  return prisma.user.upsert({
-    where: { email: bootstrapOwner.email },
-    update: {},
-    create: bootstrapOwner,
-  });
-}
-
 export async function GET() {
+  const auth = await requireAdmin();
+
+  if (auth instanceof NextResponse) {
+    return auth;
+  }
+
   const properties = await prisma.property.findMany({ orderBy: [{ createdAt: "asc" }] });
   return NextResponse.json({ properties });
 }
 
 export async function POST(request: Request) {
+  const auth = await requireAdmin();
+
+  if (auth instanceof NextResponse) {
+    return auth;
+  }
+
   const body = await request.json().catch(() => null);
 
   if (!body) {
@@ -46,7 +45,7 @@ export async function POST(request: Request) {
     return jsonError("Property name and location are required");
   }
 
-  const owner = await ensureOwner();
+  const owner = await ensureAdminUser();
 
   const property = await prisma.property.create({
     data: {

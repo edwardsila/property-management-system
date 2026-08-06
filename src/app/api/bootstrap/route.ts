@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSmsConfig } from "@/lib/africastalking";
+import { requireAdmin } from "@/lib/auth";
 
 type PropertyRecord = Awaited<ReturnType<typeof prisma.property.findMany>>[number];
 type FloorRecord = Awaited<ReturnType<typeof prisma.floor.findMany>>[number];
@@ -21,6 +22,12 @@ function serializeDecimal(value: unknown) {
 }
 
 export async function GET() {
+  const auth = await requireAdmin();
+
+  if (auth instanceof NextResponse) {
+    return auth;
+  }
+
   const [properties, floors, unitTypes, units, tenants, leases, payments, messages, incoming]: [
     PropertyRecord[],
     FloorRecord[],

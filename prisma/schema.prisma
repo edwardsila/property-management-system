@@ -97,12 +97,13 @@ enum MessageStatus {
 }
 
 model User {
-  id              String   @id @default(cuid())
-  name            String
-  email           String   @unique
-  phone           String?
-  passwordHash    String?
-  role            UserRole
+  id            String    @id @default(cuid())
+  name          String
+  email         String    @unique
+  phone         String?
+  otpCodeHash   String?
+  otpExpiresAt  DateTime?
+  role          UserRole
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
