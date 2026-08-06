@@ -335,7 +335,7 @@ export default function Home() {
                     <path d="M5 4h4l2 5-2.5 1.5a11 11 0 0 0 5 5L15 13l5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2" />
                   </svg>
                 </span>
-                <span>+254 700 000 000</span>
+                <span>+254 115 760 594</span>
               </div>
               <div className="flex items-center gap-3 text-slate-700">
                 <span className="flex h-10 w-10 items-center justify-center rounded-full bg-navy-light text-navy">
@@ -344,7 +344,7 @@ export default function Home() {
                     <path d="m3 7 9 6 9-6" />
                   </svg>
                 </span>
-                <span>hello@teravaproperties.co.ke</span>
+                <span>teravaproperties@gmail.com</span>
               </div>
               <div className="flex items-center gap-3 text-slate-700">
                 <span className="flex h-10 w-10 items-center justify-center rounded-full bg-navy-light text-navy">
@@ -353,7 +353,7 @@ export default function Home() {
                     <circle cx="12" cy="10" r="2.5" />
                   </svg>
                 </span>
-                <span>Nairobi, Kenya</span>
+                <span>Matuu, Kenya</span>
               </div>
             </div>
           </div>
@@ -413,14 +413,15 @@ export default function Home() {
               <a href="#services" className="transition hover:text-white">Services</a>
               <a href="#properties" className="transition hover:text-white">Properties</a>
               <a href="#why" className="transition hover:text-white">Why Terava</a>
+              <Link href="/admin" className="transition hover:text-white">Admin</Link>
             </div>
             <div className="flex flex-col gap-2">
               <span className="font-bold text-white">Contact</span>
-              <a href="tel:+254700000000" className="transition hover:text-white">+254 700 000 000</a>
-              <a href="mailto:hello@teravaproperties.co.ke" className="transition hover:text-white">
-                hello@teravaproperties.co.ke
+              <a href="tel:+254700000000" className="transition hover:text-white">+254 115 760 594</a>
+              <a href="mailto:teravaproperties@gmail.com" className="transition hover:text-white">
+                teravaproperties@gmail.com
               </a>
-              <span>Nairobi, Kenya</span>
+              <span>Matuu, Kenya</span>
             </div>
           </div>
         </div>
