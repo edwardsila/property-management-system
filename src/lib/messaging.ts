@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/prisma";
-import { sendSms, isSmsConfigured } from "@/lib/africastalking";
+import { sendSms, isSmsConfigured } from "@/lib/termii";
 import { formatDate, formatMoney } from "@/lib/rental";
 
 export type MessageType = "RENT_DUE" | "BALANCE" | "PAYMENT_RECEIVED" | "MANUAL";
@@ -58,7 +58,7 @@ export async function deliverMessage(messageId: string) {
   if (!tenant?.phone) {
     return prisma.message.update({
       where: { id: messageId },
-      data: { status: "FAILED", provider: "africastalking", error: "Tenant has no phone number" },
+      data: { status: "FAILED", provider: "termii", error: "Tenant has no phone number" },
     });
   }
 
@@ -67,12 +67,12 @@ export async function deliverMessage(messageId: string) {
   if (result.ok) {
     return prisma.message.update({
       where: { id: messageId },
-      data: { status: "SENT", sentAt: new Date(), provider: "africastalking", error: null },
+      data: { status: "SENT", sentAt: new Date(), provider: "termii", error: null },
     });
   }
 
   return prisma.message.update({
     where: { id: messageId },
-    data: { status: "FAILED", provider: "africastalking", error: result.error ?? result.status ?? "SMS delivery failed" },
+    data: { status: "FAILED", provider: "termii", error: result.error ?? result.status ?? "SMS delivery failed" },
   });
 }

@@ -192,7 +192,7 @@ type PaymentSummaryReport = {
 type ReportResult = RentCollectionReport | ArrearsReport | OccupancyReport | TenantStatementReport | PaymentSummaryReport;
 
 type BootstrapPayload = {
-  sms: { configured: boolean; mode: "africastalking" | "simulated"; senderId: string | null };
+  sms: { configured: boolean; mode: "termii" | "simulated"; senderId: string | null };
   properties: Property[];
   floors: Floor[];
   unitTypes: UnitType[];
@@ -1205,7 +1205,7 @@ export default function AdminApp({ user }: { user: AdminUser }) {
         body: JSON.stringify({ phone, propertyName: selectedProperty?.name ?? "" }),
       });
 
-      notify("success", "Test SMS accepted by Africa's Talking for delivery.");
+      notify("success", "Test SMS accepted by Termii for delivery.");
     } catch (requestError) {
       notify("error", requestError instanceof Error ? requestError.message : "Unable to send test SMS");
     } finally {
@@ -2630,7 +2630,7 @@ function MessageManager({
   messageForm: { type: MessageType; channel: MessageChannel; recipients: RecipientMode; tenantId: string; body: string };
   setMessageForm: React.Dispatch<React.SetStateAction<{ type: MessageType; channel: MessageChannel; recipients: RecipientMode; tenantId: string; body: string }>>;
   handleSendMessages: () => Promise<void>;
-  sms: { configured: boolean; mode: "africastalking" | "simulated"; senderId: string | null };
+  sms: { configured: boolean; mode: "termii" | "simulated"; senderId: string | null };
   tenants: Tenant[];
   messages: Message[];
 }) {
@@ -2643,8 +2643,8 @@ function MessageManager({
       <form className="grid gap-4" onSubmit={(event) => { event.preventDefault(); handleSendMessages(); }}>
         <div className={`rounded-md border px-3 py-2 text-xs ${sms.configured ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-300" : "border-amber-500/30 bg-amber-500/10 text-amber-300"}`}>
           {sms.configured
-            ? `SMS via Africa's Talking${sms.senderId ? ` from ${sms.senderId}` : ""}. Messages are delivered for real.`
-            : "SMS is in simulated mode — set AT_USERNAME and AT_API_KEY in your environment to send real Africa's Talking messages."}
+            ? `SMS via Termii${sms.senderId ? ` from ${sms.senderId}` : ""}. Messages are delivered for real.`
+            : "SMS is in simulated mode — set TERMII_API_KEY and TERMII_SENDER_ID in your environment to send real Termii messages."}
         </div>
         <div className="grid gap-4 md:grid-cols-2">
           <Field label="Message type">
@@ -2723,7 +2723,7 @@ function MessageManager({
                     <Td className="max-w-[280px]">
                       <div className="line-clamp-2 text-xs text-slate-400">{message.body}</div>
                       <div className="mt-1 text-[11px] text-slate-500">
-                        {message.provider === "africastalking" ? "via Africa's Talking" : message.provider === "simulated" ? "simulated" : message.channel}
+                        {message.provider === "termii" ? "via Termii" : message.provider === "simulated" ? "simulated" : message.channel}
                       </div>
                     </Td>
                   </tr>

@@ -1,5 +1,5 @@
 import { randomBytes, randomInt, scryptSync, timingSafeEqual } from "node:crypto";
-import { isSmsConfigured, sendSms } from "@/lib/africastalking";
+import { isSmsConfigured, sendSms } from "@/lib/termii";
 
 export const OTP_TTL_MS = 5 * 60 * 1000;
 
@@ -36,12 +36,18 @@ export type OtpDelivery = {
   error?: string;
 };
 
+function consoleFallbackEnabled() {
+  // Dev mode always falls back to the console. In production it only does so
+  // when explicitly enabled (OTP_CONSOLE_FALLBACK=true) — useful while testing.
+  return process.env.OTP_CONSOLE_FALLBACK === "true" || process.env.NODE_ENV !== "production";
+}
+
 export async function sendOtpSms(phone: string, code: string): Promise<OtpDelivery> {
   const message = `Terava admin login code: ${code}. Valid for 5 minutes. Do not share this code with anyone.`;
 
   if (!isSmsConfigured()) {
-    if (process.env.NODE_ENV === "production") {
-      return { ok: false, devMode: false, error: "SMS is not configured. Set AT_USERNAME and AT_API_KEY." };
+    if (!consoleFallbackEnabled()) {
+      return { ok: false, devMode: false, error: "SMS is not configured. Set TERMII_API_KEY and TERMII_SENDER_ID." };
     }
 
     console.log(`\n[terava-auth] Admin OTP for ${phone}: ${code}\n`);
@@ -52,6 +58,15 @@ export async function sendOtpSms(phone: string, code: string): Promise<OtpDelive
 
   if (result.ok) {
     return { ok: true, devMode: false };
+  }
+
+  if (consoleFallbackEnabled()) {
+    console.log(`\n[terava-auth] SMS delivery failed (${result.error ?? "unknown error"}). Admin OTP for ${phone}: ${code}\n`);
+    return {
+      ok: true,
+      devMode: true,
+      error: result.error,
+    };
   }
 
   return { ok: false, devMode: false, error: result.error ?? "Unable to send the verification code." };

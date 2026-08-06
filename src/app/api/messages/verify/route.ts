@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { jsonError } from "../../_shared";
-import { sendSms, isSmsConfigured } from "@/lib/africastalking";
+import { sendSms, isSmsConfigured } from "@/lib/termii";
 import { isValidKenyanMobile, parseKenyanPhone } from "@/lib/phone";
 
 function getString(value: unknown) {
@@ -23,7 +23,7 @@ export async function POST(request: Request) {
   const phone = parseKenyanPhone(phoneRaw) as string;
 
   if (!isSmsConfigured()) {
-    return jsonError("Africa's Talking SMS is not configured. Set AT_USERNAME and AT_API_KEY to send real messages.", 503);
+    return jsonError("Termii SMS is not configured. Set TERMII_API_KEY and TERMII_SENDER_ID to send real messages.", 503);
   }
 
   const propertyName = getString(body.propertyName);

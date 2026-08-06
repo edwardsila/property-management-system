@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { getSmsConfig } from "@/lib/africastalking";
+import { getSmsConfig } from "@/lib/termii";
 import { requireAdmin } from "@/lib/auth";
 
 type PropertyRecord = Awaited<ReturnType<typeof prisma.property.findMany>>[number];
@@ -55,7 +55,7 @@ export async function GET() {
   return NextResponse.json({
     sms: {
       configured: smsConfig !== null,
-      mode: smsConfig ? "africastalking" : "simulated",
+      mode: smsConfig ? "termii" : "simulated",
       senderId: smsConfig?.senderId ?? null,
     },
     properties: properties.map((property) => ({

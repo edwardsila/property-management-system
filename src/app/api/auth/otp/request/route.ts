@@ -40,6 +40,8 @@ export async function POST(request: Request) {
   return NextResponse.json({
     ok: true,
     devMode: delivery.devMode,
-    hint: delivery.devMode ? `Development mode — the code was printed to the server console.` : undefined,
+    hint: delivery.devMode
+      ? `Development mode — the code was printed to the server console.${delivery.error ? ` (SMS failed: ${delivery.error})` : ""}`
+      : undefined,
   });
 }
