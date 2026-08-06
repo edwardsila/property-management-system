@@ -97,15 +97,17 @@ enum MessageStatus {
 }
 
 model User {
-  id            String    @id @default(cuid())
-  name          String
-  email         String    @unique
-  phone         String?
-  otpCodeHash   String?
-  otpExpiresAt  DateTime?
-  role          UserRole
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  id             String    @id @default(cuid())
+  name           String
+  email          String    @unique
+  phone          String?
+  otpCodeHash    String?
+  otpExpiresAt   DateTime?
+  otpAttempts    Int       @default(0)
+  otpLockedUntil DateTime?
+  role           UserRole
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
 
   propertiesOwned   Property[] @relation("PropertyOwner")
   propertiesManaged Property[] @relation("PropertyManager")
@@ -212,8 +214,12 @@ model Tenant {
   nextOfKinName  String?
   nextOfKinPhone String?
   notes          String?
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  otpCodeHash    String?
+  otpExpiresAt   DateTime?
+  otpAttempts    Int       @default(0)
+  otpLockedUntil DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
 
   property  Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
   createdBy User?    @relation("TenantCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)

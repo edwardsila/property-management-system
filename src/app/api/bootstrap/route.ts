@@ -12,6 +12,9 @@ type LeaseRecord = Awaited<ReturnType<typeof prisma.lease.findMany>>[number];
 type PaymentRecord = Awaited<ReturnType<typeof prisma.payment.findMany>>[number];
 type MessageRecord = Awaited<ReturnType<typeof prisma.message.findMany>>[number];
 type IncomingPaymentRecord = Awaited<ReturnType<typeof prisma.incomingPayment.findMany>>[number];
+type ExpenseRecord = Awaited<ReturnType<typeof prisma.expense.findMany>>[number];
+type MaintenanceRequestRecord = Awaited<ReturnType<typeof prisma.maintenanceRequest.findMany>>[number];
+type InquiryRecord = Awaited<ReturnType<typeof prisma.inquiry.findMany>>[number];
 
 function serializeDate(value: Date) {
   return value.toISOString();
@@ -28,7 +31,7 @@ export async function GET() {
     return auth;
   }
 
-  const [properties, floors, unitTypes, units, tenants, leases, payments, messages, incoming]: [
+  const [properties, floors, unitTypes, units, tenants, leases, payments, messages, incoming, expenses, maintenance, inquiries]: [
     PropertyRecord[],
     FloorRecord[],
     UnitTypeRecord[],
@@ -38,6 +41,9 @@ export async function GET() {
     PaymentRecord[],
     MessageRecord[],
     IncomingPaymentRecord[],
+    ExpenseRecord[],
+    MaintenanceRequestRecord[],
+    InquiryRecord[],
   ] = await Promise.all([
     prisma.property.findMany({ orderBy: [{ createdAt: "asc" }] }),
     prisma.floor.findMany({ orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }] }),
@@ -48,6 +54,9 @@ export async function GET() {
     prisma.payment.findMany({ orderBy: [{ receivedAt: "desc" }] }),
     prisma.message.findMany({ orderBy: [{ createdAt: "desc" }], take: 100 }),
     prisma.incomingPayment.findMany({ orderBy: [{ status: "asc" }, { receivedAt: "desc" }], take: 200 }),
+    prisma.expense.findMany({ orderBy: [{ occurredAt: "desc" }], take: 500 }),
+    prisma.maintenanceRequest.findMany({ orderBy: [{ status: "asc" }, { priority: "desc" }, { createdAt: "desc" }], take: 200 }),
+    prisma.inquiry.findMany({ orderBy: [{ status: "asc" }, { createdAt: "desc" }], take: 200 }),
   ]);
 
   const smsConfig = getSmsConfig();
@@ -119,6 +128,24 @@ export async function GET() {
       matchedAt: item.matchedAt ? serializeDate(item.matchedAt) : null,
       createdAt: serializeDate(item.createdAt),
       updatedAt: serializeDate(item.updatedAt),
+    })),
+    expenses: expenses.map((expense) => ({
+      ...expense,
+      amount: serializeDecimal(expense.amount),
+      occurredAt: serializeDate(expense.occurredAt),
+      createdAt: serializeDate(expense.createdAt),
+      updatedAt: serializeDate(expense.updatedAt),
+    })),
+    maintenance: maintenance.map((request) => ({
+      ...request,
+      resolvedAt: request.resolvedAt ? serializeDate(request.resolvedAt) : null,
+      createdAt: serializeDate(request.createdAt),
+      updatedAt: serializeDate(request.updatedAt),
+    })),
+    inquiries: inquiries.map((inquiry) => ({
+      ...inquiry,
+      createdAt: serializeDate(inquiry.createdAt),
+      updatedAt: serializeDate(inquiry.updatedAt),
     })),
   });
 }

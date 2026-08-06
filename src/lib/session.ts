@@ -1,10 +1,15 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 
 export const SESSION_COOKIE = "terava_admin_session";
+export const TENANT_SESSION_COOKIE = "terava_tenant_session";
 const SESSION_DAYS = 7;
 
 export function getAuthSecret() {
   return process.env.AUTH_SECRET || "terava-local-dev-secret-change-me";
+}
+
+function secureCookies() {
+  return (process.env.BASE_URL || "").startsWith("https://");
 }
 
 function sign(data: string) {
@@ -51,11 +56,21 @@ export function verifySessionToken(token: string) {
 }
 
 export function sessionCookieHeader(token: string) {
-  const secure = process.env.NODE_ENV === "production";
+  const secure = secureCookies();
   return `${SESSION_COOKIE}=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${SESSION_DAYS * 24 * 60 * 60}${secure ? "; Secure" : ""}`;
 }
 
+export function tenantSessionCookieHeader(token: string) {
+  const secure = secureCookies();
+  return `${TENANT_SESSION_COOKIE}=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${SESSION_DAYS * 24 * 60 * 60}${secure ? "; Secure" : ""}`;
+}
+
 export function clearSessionCookieHeader() {
-  const secure = process.env.NODE_ENV === "production";
+  const secure = secureCookies();
   return `${SESSION_COOKIE}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0${secure ? "; Secure" : ""}`;
+}
+
+export function clearTenantSessionCookieHeader() {
+  const secure = secureCookies();
+  return `${TENANT_SESSION_COOKIE}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0${secure ? "; Secure" : ""}`;
 }

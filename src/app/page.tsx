@@ -1,4 +1,6 @@
+import Image from "next/image";
 import Link from "next/link";
+import ContactForm from "@/components/contact-form";
 
 const services = [
   {
@@ -30,6 +32,7 @@ const properties = [
     detail: "2-bedroom",
     rent: "KES 45,000 / month",
     gradient: "from-navy via-navy-dark to-leaf",
+    image: "/images/property-sunrise-court.jpg",
   },
   {
     name: "Green Ridge Bungalow",
@@ -191,13 +194,16 @@ export default function Home() {
 
           <div className="rounded-[2rem] bg-white p-4 shadow-[0_30px_80px_rgba(27,58,102,0.18)] ring-1 ring-slate-100">
             <div className="relative h-64 overflow-hidden rounded-3xl bg-gradient-to-br from-navy via-navy-dark to-leaf sm:h-72">
-              <div
-                aria-hidden="true"
-                className="absolute -right-10 -top-10 h-48 w-48 rounded-full border border-white/15"
+              <Image
+                src="/images/property-sunrise-court.jpg"
+                alt="Sunrise Court Apartments, Westlands, Nairobi"
+                fill
+                sizes="(max-width: 1024px) 100vw, 50vw"
+                className="absolute inset-0 object-cover"
               />
               <div
                 aria-hidden="true"
-                className="absolute -right-0 top-16 h-32 w-32 rounded-full border border-white/10"
+                className="absolute inset-0 bg-gradient-to-t from-navy-darker/90 via-navy-darker/30 to-transparent"
               />
               <span className="absolute left-5 top-5 rounded-full bg-gold px-3 py-1 text-xs font-bold uppercase tracking-wide text-navy-darker">
                 Featured
@@ -261,11 +267,21 @@ export default function Home() {
           <div className="mt-12 grid gap-6 md:grid-cols-3">
             {properties.map((property) => (
               <article key={property.name} className="overflow-hidden rounded-3xl bg-white shadow-sm ring-1 ring-slate-100">
-                <div className={`relative h-56 bg-gradient-to-br ${property.gradient}`}>
-                  <div
-                    aria-hidden="true"
-                    className="absolute -left-8 -top-8 h-40 w-40 rounded-full border border-white/15"
-                  />
+                <div className={`relative h-56 ${property.image ? "overflow-hidden" : `bg-gradient-to-br ${property.gradient}`}`}>
+                  {property.image ? (
+                    <Image
+                      src={property.image}
+                      alt={property.name}
+                      fill
+                      sizes="(max-width: 768px) 100vw, 33vw"
+                      className="absolute inset-0 object-cover"
+                    />
+                  ) : (
+                    <div
+                      aria-hidden="true"
+                      className="absolute -left-8 -top-8 h-40 w-40 rounded-full border border-white/15"
+                    />
+                  )}
                   <span className="absolute left-4 top-4 rounded-full bg-white/15 px-3 py-1 text-xs font-bold uppercase tracking-wide text-white backdrop-blur">
                     For rent
                   </span>
@@ -358,45 +374,7 @@ export default function Home() {
             </div>
           </div>
           <div className="rounded-[2rem] bg-navy-light p-8">
-            <div className="flex flex-col gap-4">
-              <div>
-                <label className="text-sm font-semibold text-navy" htmlFor="name">
-                  Full name
-                </label>
-                <input
-                  id="name"
-                  className="mt-2 w-full rounded-xl border border-navy/15 bg-white px-4 py-3 text-sm outline-none transition focus:border-navy"
-                  placeholder="Your name"
-                />
-              </div>
-              <div>
-                <label className="text-sm font-semibold text-navy" htmlFor="phone">
-                  Phone number
-                </label>
-                <input
-                  id="phone"
-                  className="mt-2 w-full rounded-xl border border-navy/15 bg-white px-4 py-3 text-sm outline-none transition focus:border-navy"
-                  placeholder="+254 ..."
-                />
-              </div>
-              <div>
-                <label className="text-sm font-semibold text-navy" htmlFor="message">
-                  How can we help?
-                </label>
-                <textarea
-                  id="message"
-                  rows={4}
-                  className="mt-2 w-full resize-none rounded-xl border border-navy/15 bg-white px-4 py-3 text-sm outline-none transition focus:border-navy"
-                  placeholder="Tell us about your property or cleaning needs"
-                />
-              </div>
-              <a
-                href="mailto:hello@teravaproperties.co.ke"
-                className="rounded-full bg-leaf px-6 py-3 text-center text-sm font-semibold text-white transition hover:bg-leaf-dark"
-              >
-                Send a request
-              </a>
-            </div>
+            <ContactForm />
           </div>
         </div>
       </section>
@@ -417,7 +395,7 @@ export default function Home() {
             </div>
             <div className="flex flex-col gap-2">
               <span className="font-bold text-white">Contact</span>
-              <a href="tel:+254700000000" className="transition hover:text-white">+254 115 760 594</a>
+              <a href="tel:+254115760594" className="transition hover:text-white">+254 115 760 594</a>
               <a href="mailto:teravaproperties@gmail.com" className="transition hover:text-white">
                 teravaproperties@gmail.com
               </a>

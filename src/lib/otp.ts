@@ -71,3 +71,33 @@ export async function sendOtpSms(phone: string, code: string): Promise<OtpDelive
 
   return { ok: false, devMode: false, error: result.error ?? "Unable to send the verification code." };
 }
+
+export async function sendTenantOtpSms(phone: string, code: string): Promise<OtpDelivery> {
+  const message = `Your Terava tenant portal login code is ${code}. Valid for 5 minutes. Do not share this code with anyone.`;
+
+  if (!isSmsConfigured()) {
+    if (!consoleFallbackEnabled()) {
+      return { ok: false, devMode: false, error: "SMS is not configured. Set TERMII_API_KEY and TERMII_SENDER_ID." };
+    }
+
+    console.log(`\n[terava-auth] Tenant OTP for ${phone}: ${code}\n`);
+    return { ok: true, devMode: true };
+  }
+
+  const result = await sendSms(phone, message);
+
+  if (result.ok) {
+    return { ok: true, devMode: false };
+  }
+
+  if (consoleFallbackEnabled()) {
+    console.log(`\n[terava-auth] SMS delivery failed (${result.error ?? "unknown error"}). Tenant OTP for ${phone}: ${code}\n`);
+    return {
+      ok: true,
+      devMode: true,
+      error: result.error,
+    };
+  }
+
+  return { ok: false, devMode: false, error: result.error ?? "Unable to send the verification code." };
+}

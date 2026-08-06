@@ -24,6 +24,9 @@ type UnitStatus = "VACANT" | "OCCUPIED" | "RESERVED" | "MAINTENANCE";
 type LeaseStatus = "DRAFT" | "ACTIVE" | "ENDED" | "TERMINATED";
 type PaymentMethod = "CASH" | "BANK" | "MPESA" | "OTHER";
 type PaymentStatus = "PENDING" | "CONFIRMED" | "REVERSED";
+type ExpenseCategory = "REPAIRS" | "UTILITIES" | "STAFF_COSTS" | "ADMIN" | "TAXES" | "OTHER";
+type MaintenanceStatus = "OPEN" | "IN_PROGRESS" | "AWAITING_APPROVAL" | "RESOLVED" | "CLOSED";
+type InquiryStatus = "NEW" | "CONTACTED" | "QUALIFIED" | "CLOSED";
 
 type Property = {
   id: string;
@@ -137,6 +140,42 @@ type MessageChannel = "SMS" | "EMAIL";
 type MessageStatus = "QUEUED" | "SENT" | "FAILED";
 type RecipientMode = "ALL_TENANTS" | "IN_ARREARS" | "SPECIFIC";
 
+type Expense = {
+  id: string;
+  propertyId: string;
+  category: ExpenseCategory;
+  title: string;
+  amount: string;
+  occurredAt: string;
+  vendor: string | null;
+  notes: string | null;
+};
+
+type MaintenanceRequest = {
+  id: string;
+  propertyId: string;
+  unitId: string | null;
+  tenantId: string | null;
+  title: string;
+  description: string;
+  status: MaintenanceStatus;
+  priority: number;
+  assignedTo: string | null;
+  resolvedAt: string | null;
+};
+
+type Inquiry = {
+  id: string;
+  propertyId: string;
+  tenantId: string | null;
+  fullName: string;
+  phone: string;
+  email: string | null;
+  message: string;
+  status: InquiryStatus;
+  createdAt: string;
+};
+
 type Message = {
   id: string;
   propertyId: string;
@@ -202,6 +241,9 @@ type BootstrapPayload = {
   payments: Payment[];
   messages: Message[];
   incoming: IncomingPayment[];
+  expenses: Expense[];
+  maintenance: MaintenanceRequest[];
+  inquiries: Inquiry[];
 };
 
 const propertyTypes: Array<{ label: string; value: PropertyType }> = [
@@ -238,6 +280,30 @@ const paymentStatuses: Array<{ label: string; value: PaymentStatus }> = [
   { label: "Pending", value: "PENDING" },
   { label: "Confirmed", value: "CONFIRMED" },
   { label: "Reversed", value: "REVERSED" },
+];
+
+const expenseCategories: Array<{ label: string; value: ExpenseCategory }> = [
+  { label: "Repairs", value: "REPAIRS" },
+  { label: "Utilities", value: "UTILITIES" },
+  { label: "Staff costs", value: "STAFF_COSTS" },
+  { label: "Administration", value: "ADMIN" },
+  { label: "Taxes", value: "TAXES" },
+  { label: "Other", value: "OTHER" },
+];
+
+const maintenanceStatuses: Array<{ label: string; value: MaintenanceStatus }> = [
+  { label: "Open", value: "OPEN" },
+  { label: "In progress", value: "IN_PROGRESS" },
+  { label: "Awaiting approval", value: "AWAITING_APPROVAL" },
+  { label: "Resolved", value: "RESOLVED" },
+  { label: "Closed", value: "CLOSED" },
+];
+
+const inquiryStatuses: Array<{ label: string; value: InquiryStatus }> = [
+  { label: "New", value: "NEW" },
+  { label: "Contacted", value: "CONTACTED" },
+  { label: "Qualified", value: "QUALIFIED" },
+  { label: "Closed", value: "CLOSED" },
 ];
 
 const messageTypes: Array<{ label: string; value: MessageType }> = [
@@ -299,6 +365,19 @@ const badgeColors: Record<string, string> = {
   UNMATCHED: "border-amber-500/30 bg-amber-500/10 text-amber-300",
   MATCHED: "border-emerald-500/30 bg-emerald-500/10 text-emerald-300",
   DISCARDED: "border-slate-500/30 bg-slate-500/10 text-slate-300",
+  OPEN: "border-amber-500/30 bg-amber-500/10 text-amber-300",
+  IN_PROGRESS: "border-sky-500/30 bg-sky-500/10 text-sky-300",
+  AWAITING_APPROVAL: "border-amber-500/30 bg-amber-500/10 text-amber-300",
+  RESOLVED: "border-emerald-500/30 bg-emerald-500/10 text-emerald-300",
+  CLOSED: "border-slate-500/30 bg-slate-500/10 text-slate-300",
+  NEW: "border-amber-500/30 bg-amber-500/10 text-amber-300",
+  CONTACTED: "border-sky-500/30 bg-sky-500/10 text-sky-300",
+  QUALIFIED: "border-emerald-500/30 bg-emerald-500/10 text-emerald-300",
+  REPAIRS: "border-rose-500/30 bg-rose-500/10 text-rose-300",
+  UTILITIES: "border-blue-500/30 bg-blue-500/10 text-blue-300",
+  STAFF_COSTS: "border-amber-500/30 bg-amber-500/10 text-amber-300",
+  ADMIN: "border-slate-500/30 bg-slate-500/10 text-slate-300",
+  TAXES: "border-violet-500/30 bg-violet-500/10 text-violet-300",
 };
 
 function money(value: string | number | null | undefined) {
@@ -486,6 +565,34 @@ function emptyPayment(propertyId = ""): Payment {
   };
 }
 
+function emptyExpense(propertyId = ""): Expense {
+  return {
+    id: "",
+    propertyId,
+    category: "REPAIRS",
+    title: "",
+    amount: "",
+    occurredAt: new Date().toISOString(),
+    vendor: null,
+    notes: null,
+  };
+}
+
+function emptyMaintenance(propertyId = ""): MaintenanceRequest {
+  return {
+    id: "",
+    propertyId,
+    unitId: null,
+    tenantId: null,
+    title: "",
+    description: "",
+    status: "OPEN",
+    priority: 2,
+    assignedTo: null,
+    resolvedAt: null,
+  };
+}
+
 function leaseLabel(lease: Lease, units: Unit[], tenants: Tenant[]) {
   const unit = units.find((item) => item.id === lease.unitId);
   const tenant = tenants.find((item) => item.id === lease.tenantId);
@@ -529,6 +636,9 @@ const sectionLabels: Record<string, string> = {
   leases: "Leases",
   payments: "Payments",
   incoming: "Incoming",
+  maintenance: "Maintenance",
+  expenses: "Expenses",
+  inquiries: "Inquiries",
   messages: "Messages",
   reports: "Reports",
 };
@@ -548,6 +658,9 @@ export default function AdminApp({ user }: { user: AdminUser }) {
   const [payments, setPayments] = useState<Payment[]>([]);
   const [messages, setMessages] = useState<Message[]>([]);
   const [incoming, setIncoming] = useState<IncomingPayment[]>([]);
+  const [expenses, setExpenses] = useState<Expense[]>([]);
+  const [maintenance, setMaintenance] = useState<MaintenanceRequest[]>([]);
+  const [inquiries, setInquiries] = useState<Inquiry[]>([]);
   const [selectedPropertyId, setSelectedPropertyId] = useState("");
 
   const [propertyForm, setPropertyForm] = useState<Property>(emptyProperty());
@@ -557,6 +670,8 @@ export default function AdminApp({ user }: { user: AdminUser }) {
   const [tenantForm, setTenantForm] = useState<Tenant>(emptyTenant());
   const [leaseForm, setLeaseForm] = useState<Lease>(emptyLease());
   const [paymentForm, setPaymentForm] = useState<Payment>(emptyPayment());
+  const [expenseForm, setExpenseForm] = useState<Expense>(emptyExpense());
+  const [maintenanceForm, setMaintenanceForm] = useState<MaintenanceRequest>(emptyMaintenance());
   const [paymentSendSms, setPaymentSendSms] = useState(true);
   const [incomingForm, setIncomingForm] = useState({ phone: "", amount: "", method: "MPESA" as PaymentMethod, reference: "" });
   const [incomingMapping, setIncomingMapping] = useState<Record<string, { tenantId: string; leaseId: string }>>({});
@@ -568,6 +683,8 @@ export default function AdminApp({ user }: { user: AdminUser }) {
   const [editingTenantId, setEditingTenantId] = useState("");
   const [editingLeaseId, setEditingLeaseId] = useState("");
   const [editingPaymentId, setEditingPaymentId] = useState("");
+  const [editingExpenseId, setEditingExpenseId] = useState("");
+  const [editingMaintenanceId, setEditingMaintenanceId] = useState("");
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -577,6 +694,9 @@ export default function AdminApp({ user }: { user: AdminUser }) {
   const [tenantSearch, setTenantSearch] = useState("");
   const [unitSearch, setUnitSearch] = useState("");
   const [paymentSearch, setPaymentSearch] = useState("");
+  const [expenseSearch, setExpenseSearch] = useState("");
+  const [maintenanceSearch, setMaintenanceSearch] = useState("");
+  const [inquirySearch, setInquirySearch] = useState("");
 
   const [messageForm, setMessageForm] = useState({
     type: "RENT_DUE" as MessageType,
@@ -692,6 +812,9 @@ export default function AdminApp({ user }: { user: AdminUser }) {
   const propertyPayments = useMemo(() => payments.filter((payment) => payment.propertyId === selectedPropertyId), [payments, selectedPropertyId]);
   const propertyIncoming = useMemo(() => incoming.filter((item) => item.propertyId === selectedPropertyId), [incoming, selectedPropertyId]);
   const propertyMessages = useMemo(() => messages.filter((message) => message.propertyId === selectedPropertyId), [messages, selectedPropertyId]);
+  const propertyExpenses = useMemo(() => expenses.filter((expense) => expense.propertyId === selectedPropertyId), [expenses, selectedPropertyId]);
+  const propertyMaintenance = useMemo(() => maintenance.filter((request) => request.propertyId === selectedPropertyId), [maintenance, selectedPropertyId]);
+  const propertyInquiries = useMemo(() => inquiries.filter((inquiry) => inquiry.propertyId === selectedPropertyId), [inquiries, selectedPropertyId]);
 
   const activeLeasesCount = useMemo(() => leases.filter((lease) => lease.status === "ACTIVE").length, [leases]);
   const confirmedMpesaPayments = useMemo(
@@ -800,6 +923,9 @@ export default function AdminApp({ user }: { user: AdminUser }) {
     setPayments(data.payments);
     setMessages(data.messages);
     setIncoming(data.incoming);
+    setExpenses(data.expenses);
+    setMaintenance(data.maintenance);
+    setInquiries(data.inquiries);
     setSelectedPropertyId((current) => current || data.properties[0]?.id || "");
   }
 
@@ -1026,6 +1152,83 @@ export default function AdminApp({ user }: { user: AdminUser }) {
       setPaymentSendSms(true);
     } catch (requestError) {
       notify("error", requestError instanceof Error ? requestError.message : "Unable to save payment");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleExpenseSubmit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    if (!expenseForm.propertyId || !expenseForm.title.trim()) {
+      return;
+    }
+
+    const amount = Number(expenseForm.amount);
+
+    if (!Number.isFinite(amount) || amount <= 0) {
+      notify("error", "Enter a valid expense amount");
+      return;
+    }
+
+    setSaving(true);
+
+    try {
+      if (editingExpenseId) {
+        await submitJson(`/api/expenses/${editingExpenseId}`, "PATCH", expenseForm);
+        notify("success", "Expense updated");
+      } else {
+        await submitJson("/api/expenses", "POST", expenseForm);
+        notify("success", "Expense recorded");
+      }
+
+      await refresh();
+      setEditingExpenseId("");
+      setExpenseForm(emptyExpense(selectedPropertyId));
+    } catch (requestError) {
+      notify("error", requestError instanceof Error ? requestError.message : "Unable to save expense");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleMaintenanceSubmit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    if (!maintenanceForm.propertyId || !maintenanceForm.title.trim()) {
+      return;
+    }
+
+    setSaving(true);
+
+    try {
+      if (editingMaintenanceId) {
+        await submitJson(`/api/maintenance/${editingMaintenanceId}`, "PATCH", maintenanceForm);
+        notify("success", "Maintenance request updated");
+      } else {
+        await submitJson("/api/maintenance", "POST", maintenanceForm);
+        notify("success", "Maintenance request created");
+      }
+
+      await refresh();
+      setEditingMaintenanceId("");
+      setMaintenanceForm(emptyMaintenance(selectedPropertyId));
+    } catch (requestError) {
+      notify("error", requestError instanceof Error ? requestError.message : "Unable to save maintenance request");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleInquiryStatusChange(inquiryId: string, status: InquiryStatus) {
+    setSaving(true);
+
+    try {
+      await submitJson(`/api/inquiries/${inquiryId}`, "PATCH", { status });
+      notify("success", "Inquiry updated");
+      await refresh();
+    } catch (requestError) {
+      notify("error", requestError instanceof Error ? requestError.message : "Unable to update inquiry");
     } finally {
       setSaving(false);
     }
@@ -1505,6 +1708,60 @@ export default function AdminApp({ user }: { user: AdminUser }) {
                 onAdd={handleIncomingSubmit}
                 onConfirm={confirmIncomingPayment}
                 onDiscard={discardIncomingPayment}
+              />
+            </SectionCard>
+          ) : null}
+
+          {activeSection === "maintenance" ? (
+            <SectionCard title="Maintenance" description="Log repairs and issues per unit, assign them, and track them to resolution.">
+              <MaintenanceManager
+                loading={loading}
+                saving={saving}
+                selectedPropertyId={selectedPropertyId}
+                maintenanceForm={maintenanceForm}
+                setMaintenanceForm={setMaintenanceForm}
+                editingMaintenanceId={editingMaintenanceId}
+                setEditingMaintenanceId={setEditingMaintenanceId}
+                handleMaintenanceSubmit={handleMaintenanceSubmit}
+                requests={propertyMaintenance}
+                units={propertyUnits}
+                tenants={propertyTenants}
+                search={maintenanceSearch}
+                setSearch={setMaintenanceSearch}
+                deleteResource={deleteResource}
+              />
+            </SectionCard>
+          ) : null}
+
+          {activeSection === "expenses" ? (
+            <SectionCard title="Expenses" description="Record repairs, utilities, staff costs, and other outgoing money per property.">
+              <ExpenseManager
+                loading={loading}
+                saving={saving}
+                selectedPropertyId={selectedPropertyId}
+                expenseForm={expenseForm}
+                setExpenseForm={setExpenseForm}
+                editingExpenseId={editingExpenseId}
+                setEditingExpenseId={setEditingExpenseId}
+                handleExpenseSubmit={handleExpenseSubmit}
+                expenses={propertyExpenses}
+                search={expenseSearch}
+                setSearch={setExpenseSearch}
+                deleteResource={deleteResource}
+              />
+            </SectionCard>
+          ) : null}
+
+          {activeSection === "inquiries" ? (
+            <SectionCard title="Inquiries" description="Website leads and visitor requests. Move them through the pipeline as you follow up.">
+              <InquiryManager
+                loading={loading}
+                selectedPropertyId={selectedPropertyId}
+                inquiries={propertyInquiries}
+                search={inquirySearch}
+                setSearch={setInquirySearch}
+                onChangeStatus={handleInquiryStatusChange}
+                deleteResource={deleteResource}
               />
             </SectionCard>
           ) : null}
@@ -2410,6 +2667,328 @@ function PaymentManager({
           </Table>
         )}
       </div>
+    </div>
+  );
+}
+
+function ExpenseManager({
+  loading,
+  saving,
+  selectedPropertyId,
+  expenseForm,
+  setExpenseForm,
+  editingExpenseId,
+  setEditingExpenseId,
+  handleExpenseSubmit,
+  expenses,
+  search,
+  setSearch,
+  deleteResource,
+}: {
+  loading: boolean;
+  saving: boolean;
+  selectedPropertyId: string;
+  expenseForm: Expense;
+  setExpenseForm: React.Dispatch<React.SetStateAction<Expense>>;
+  editingExpenseId: string;
+  setEditingExpenseId: (value: string) => void;
+  handleExpenseSubmit: (event: React.FormEvent<HTMLFormElement>) => Promise<void>;
+  expenses: Expense[];
+  search: string;
+  setSearch: (value: string) => void;
+  deleteResource: (path: string) => Promise<void>;
+}) {
+  if (!selectedPropertyId) {
+    return <EmptyState text="Select a property workspace to manage expenses." />;
+  }
+
+  const query = search.trim().toLowerCase();
+  const visibleExpenses = query
+    ? expenses.filter((expense) => `${expense.title} ${expense.vendor ?? ""} ${expense.category}`.toLowerCase().includes(query))
+    : expenses;
+
+  const total = visibleExpenses.reduce((sum, expense) => sum + Number(expense.amount || 0), 0);
+
+  return (
+    <div className="grid gap-6 xl:grid-cols-[0.9fr_1.1fr]">
+      <form className="grid gap-4" onSubmit={handleExpenseSubmit}>
+        <div className="grid gap-4 md:grid-cols-2">
+          <Field label="Category">
+            <select className={inputClass} value={expenseForm.category} onChange={(event) => setExpenseForm((current) => ({ ...current, category: event.target.value as ExpenseCategory }))}>
+              {expenseCategories.map((category) => <option key={category.value} value={category.value}>{category.label}</option>)}
+            </select>
+          </Field>
+          <Field label="Amount (KES)">
+            <input className={inputClass} type="number" min="0" value={expenseForm.amount} onChange={(event) => setExpenseForm((current) => ({ ...current, amount: event.target.value }))} placeholder="e.g. 5000" />
+          </Field>
+        </div>
+        <Field label="Title">
+          <input className={inputClass} value={expenseForm.title} onChange={(event) => setExpenseForm((current) => ({ ...current, title: event.target.value }))} placeholder="e.g. Plumbing repair" />
+        </Field>
+        <div className="grid gap-4 md:grid-cols-2">
+          <Field label="Date">
+            <input className={inputClass} type="datetime-local" value={dateTimeLocal(expenseForm.occurredAt)} onChange={(event) => setExpenseForm((current) => ({ ...current, occurredAt: event.target.value }))} />
+          </Field>
+          <Field label="Vendor (optional)">
+            <input className={inputClass} value={expenseForm.vendor ?? ""} onChange={(event) => setExpenseForm((current) => ({ ...current, vendor: event.target.value }))} placeholder="Supplier or contractor" />
+          </Field>
+        </div>
+        <Field label="Notes">
+          <textarea className={`${inputClass} min-h-24`} value={expenseForm.notes ?? ""} onChange={(event) => setExpenseForm((current) => ({ ...current, notes: event.target.value }))} />
+        </Field>
+        <div className="flex flex-wrap gap-3">
+          <button className={primaryButtonClass} type="submit" disabled={saving || loading}>{saving ? "Saving..." : editingExpenseId ? "Save expense" : "Record expense"}</button>
+          <button className={secondaryButtonClass} type="button" onClick={() => { setExpenseForm(emptyExpense(selectedPropertyId)); setEditingExpenseId(""); }}>Clear</button>
+        </div>
+      </form>
+
+      <div className="grid gap-3">
+        <SearchInput value={search} onChange={setSearch} placeholder="Search expenses by title, vendor, or category" />
+        {visibleExpenses.length === 0 ? <EmptyState text={search ? "No expenses match your search." : "No expenses recorded yet for this property."} /> : (
+          <Table>
+            <thead>
+              <tr>
+                <Th>Date</Th>
+                <Th>Title</Th>
+                <Th>Category</Th>
+                <Th>Vendor</Th>
+                <Th className="text-right">Amount</Th>
+                <Th className="text-right">Actions</Th>
+              </tr>
+            </thead>
+            <tbody>
+              {visibleExpenses.map((expense) => (
+                <tr key={expense.id}>
+                  <Td className="whitespace-nowrap">{formatDate(expense.occurredAt)}</Td>
+                  <Td className="font-medium text-slate-50">{expense.title}</Td>
+                  <Td><StatusBadge value={expense.category} /></Td>
+                  <Td>{expense.vendor ?? "—"}</Td>
+                  <Td className="text-right">{money(expense.amount)}</Td>
+                  <Td className="text-right">
+                    <div className="flex justify-end gap-2">
+                      <TableButton onClick={() => { setEditingExpenseId(expense.id); setExpenseForm(expense); }}>Edit</TableButton>
+                      <ConfirmButton onConfirm={() => deleteResource(`/api/expenses/${expense.id}`)}>Delete</ConfirmButton>
+                    </div>
+                  </Td>
+                </tr>
+              ))}
+            </tbody>
+          </Table>
+        )}
+        <div className="flex justify-end rounded-md border border-slate-800 bg-slate-950 px-4 py-2.5 text-sm text-slate-300">
+          <span>Total: <span className="font-semibold text-slate-50">{money(total)}</span></span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function MaintenanceManager({
+  loading,
+  saving,
+  selectedPropertyId,
+  maintenanceForm,
+  setMaintenanceForm,
+  editingMaintenanceId,
+  setEditingMaintenanceId,
+  handleMaintenanceSubmit,
+  requests,
+  units,
+  tenants,
+  search,
+  setSearch,
+  deleteResource,
+}: {
+  loading: boolean;
+  saving: boolean;
+  selectedPropertyId: string;
+  maintenanceForm: MaintenanceRequest;
+  setMaintenanceForm: React.Dispatch<React.SetStateAction<MaintenanceRequest>>;
+  editingMaintenanceId: string;
+  setEditingMaintenanceId: (value: string) => void;
+  handleMaintenanceSubmit: (event: React.FormEvent<HTMLFormElement>) => Promise<void>;
+  requests: MaintenanceRequest[];
+  units: Unit[];
+  tenants: Tenant[];
+  search: string;
+  setSearch: (value: string) => void;
+  deleteResource: (path: string) => Promise<void>;
+}) {
+  if (!selectedPropertyId) {
+    return <EmptyState text="Select a property workspace to manage maintenance." />;
+  }
+
+  const query = search.trim().toLowerCase();
+  const visibleRequests = query
+    ? requests.filter((request) => {
+        const unit = units.find((item) => item.id === request.unitId);
+        const tenant = tenants.find((item) => item.id === request.tenantId);
+        const haystack = `${request.title} ${request.description} ${request.assignedTo ?? ""} ${unit?.unitName ?? ""} ${tenant?.fullName ?? ""}`.toLowerCase();
+
+        return haystack.includes(query);
+      })
+    : requests;
+
+  return (
+    <div className="grid gap-6 xl:grid-cols-[0.9fr_1.1fr]">
+      <form className="grid gap-4" onSubmit={handleMaintenanceSubmit}>
+        <Field label="Title">
+          <input className={inputClass} value={maintenanceForm.title} onChange={(event) => setMaintenanceForm((current) => ({ ...current, title: event.target.value }))} placeholder="e.g. Leaking kitchen sink" />
+        </Field>
+        <div className="grid gap-4 md:grid-cols-2">
+          <Field label="Unit (optional)">
+            <select className={inputClass} value={maintenanceForm.unitId ?? ""} onChange={(event) => setMaintenanceForm((current) => ({ ...current, unitId: event.target.value || null }))}>
+              <option value="">No specific unit</option>
+              {units.map((unit) => <option key={unit.id} value={unit.id}>{unit.unitName}</option>)}
+            </select>
+          </Field>
+          <Field label="Tenant (optional)">
+            <select className={inputClass} value={maintenanceForm.tenantId ?? ""} onChange={(event) => setMaintenanceForm((current) => ({ ...current, tenantId: event.target.value || null }))}>
+              <option value="">No specific tenant</option>
+              {tenants.map((tenant) => <option key={tenant.id} value={tenant.id}>{tenant.fullName}</option>)}
+            </select>
+          </Field>
+        </div>
+        <div className="grid gap-4 md:grid-cols-3">
+          <Field label="Priority">
+            <select className={inputClass} value={maintenanceForm.priority} onChange={(event) => setMaintenanceForm((current) => ({ ...current, priority: Number(event.target.value) }))}>
+              {[1, 2, 3, 4, 5].map((priority) => <option key={priority} value={priority}>{priority} {priority === 1 ? "(lowest)" : priority === 5 ? "(highest)" : ""}</option>)}
+            </select>
+          </Field>
+          <Field label="Status">
+            <select className={inputClass} value={maintenanceForm.status} onChange={(event) => setMaintenanceForm((current) => ({ ...current, status: event.target.value as MaintenanceStatus }))}>
+              {maintenanceStatuses.map((status) => <option key={status.value} value={status.value}>{status.label}</option>)}
+            </select>
+          </Field>
+          <Field label="Assigned to">
+            <input className={inputClass} value={maintenanceForm.assignedTo ?? ""} onChange={(event) => setMaintenanceForm((current) => ({ ...current, assignedTo: event.target.value }))} placeholder="Person or company" />
+          </Field>
+        </div>
+        <Field label="Description">
+          <textarea className={`${inputClass} min-h-24`} value={maintenanceForm.description} onChange={(event) => setMaintenanceForm((current) => ({ ...current, description: event.target.value }))} placeholder="What needs to be fixed?" />
+        </Field>
+        <div className="flex flex-wrap gap-3">
+          <button className={primaryButtonClass} type="submit" disabled={saving || loading}>{saving ? "Saving..." : editingMaintenanceId ? "Save request" : "Create request"}</button>
+          <button className={secondaryButtonClass} type="button" onClick={() => { setMaintenanceForm(emptyMaintenance(selectedPropertyId)); setEditingMaintenanceId(""); }}>Clear</button>
+        </div>
+      </form>
+
+      <div className="grid gap-3">
+        <SearchInput value={search} onChange={setSearch} placeholder="Search requests by title, unit, tenant, or assignee" />
+        {visibleRequests.length === 0 ? <EmptyState text={search ? "No requests match your search." : "No maintenance requests yet for this property."} /> : (
+          <Table>
+            <thead>
+              <tr>
+                <Th>Status</Th>
+                <Th>Priority</Th>
+                <Th>Title</Th>
+                <Th>Unit</Th>
+                <Th>Tenant</Th>
+                <Th>Assigned to</Th>
+                <Th className="text-right">Actions</Th>
+              </tr>
+            </thead>
+            <tbody>
+              {visibleRequests.map((request) => {
+                const unit = units.find((item) => item.id === request.unitId);
+                const tenant = tenants.find((item) => item.id === request.tenantId);
+
+                return (
+                  <tr key={request.id}>
+                    <Td><StatusBadge value={request.status} /></Td>
+                    <Td>{request.priority}</Td>
+                    <Td className="font-medium text-slate-50">{request.title}</Td>
+                    <Td>{unit?.unitName ?? "—"}</Td>
+                    <Td>{tenant?.fullName ?? "—"}</Td>
+                    <Td>{request.assignedTo ?? "—"}</Td>
+                    <Td className="text-right">
+                      <div className="flex justify-end gap-2">
+                        <TableButton onClick={() => { setEditingMaintenanceId(request.id); setMaintenanceForm(request); }}>Edit</TableButton>
+                        <ConfirmButton onConfirm={() => deleteResource(`/api/maintenance/${request.id}`)}>Delete</ConfirmButton>
+                      </div>
+                    </Td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </Table>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function InquiryManager({
+  loading,
+  selectedPropertyId,
+  inquiries,
+  search,
+  setSearch,
+  onChangeStatus,
+  deleteResource,
+}: {
+  loading: boolean;
+  selectedPropertyId: string;
+  inquiries: Inquiry[];
+  search: string;
+  setSearch: (value: string) => void;
+  onChangeStatus: (inquiryId: string, status: InquiryStatus) => Promise<void>;
+  deleteResource: (path: string) => Promise<void>;
+}) {
+  if (!selectedPropertyId) {
+    return <EmptyState text="Select a property workspace to manage inquiries." />;
+  }
+
+  const query = search.trim().toLowerCase();
+  const visibleInquiries = query
+    ? inquiries.filter((inquiry) => `${inquiry.fullName} ${inquiry.phone} ${inquiry.email ?? ""} ${inquiry.message}`.toLowerCase().includes(query))
+    : inquiries;
+
+  return (
+    <div className="grid gap-3">
+      <SearchInput value={search} onChange={setSearch} placeholder="Search inquiries by name, phone, email, or message" />
+      {visibleInquiries.length === 0 ? <EmptyState text={search ? "No inquiries match your search." : "No inquiries yet for this property."} /> : (
+        <Table>
+          <thead>
+            <tr>
+              <Th>Received</Th>
+              <Th>Name</Th>
+              <Th>Contact</Th>
+              <Th>Message</Th>
+              <Th>Status</Th>
+              <Th className="text-right">Actions</Th>
+            </tr>
+          </thead>
+          <tbody>
+            {visibleInquiries.map((inquiry) => (
+              <tr key={inquiry.id}>
+                <Td className="whitespace-nowrap">{formatDateTime(inquiry.createdAt)}</Td>
+                <Td className="font-medium text-slate-50">{inquiry.fullName}</Td>
+                <Td>
+                  <div className="whitespace-nowrap">{inquiry.phone}</div>
+                  {inquiry.email ? <div className="text-xs text-slate-500">{inquiry.email}</div> : null}
+                </Td>
+                <Td className="max-w-xs">{inquiry.message}</Td>
+                <Td>
+                  <select
+                    className={inputClass}
+                    value={inquiry.status}
+                    disabled={loading}
+                    onChange={(event) => onChangeStatus(inquiry.id, event.target.value as InquiryStatus)}
+                  >
+                    {inquiryStatuses.map((status) => <option key={status.value} value={status.value}>{status.label}</option>)}
+                  </select>
+                </Td>
+                <Td className="text-right">
+                  <div className="flex justify-end gap-2">
+                    <ConfirmButton onConfirm={() => deleteResource(`/api/inquiries/${inquiry.id}`)}>Delete</ConfirmButton>
+                  </div>
+                </Td>
+              </tr>
+            ))}
+          </tbody>
+        </Table>
+      )}
     </div>
   );
 }

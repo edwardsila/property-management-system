@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getString, jsonError } from "../../../_shared";
-import { ADMIN_EMAIL, createSessionToken, sessionCookieHeader } from "@/lib/auth";
 import { verifyOtp } from "@/lib/otp";
 import { isValidKenyanMobile, parseKenyanPhone } from "@/lib/phone";
+import { createSessionToken, tenantSessionCookieHeader } from "@/lib/tenant-auth";
 
 const MAX_OTP_ATTEMPTS = 5;
 const OTP_LOCK_MS = 15 * 60 * 1000;
@@ -26,33 +26,36 @@ export async function POST(request: Request) {
     return jsonError("Enter the 6-digit code.");
   }
 
-  const admin = await prisma.user.findUnique({ where: { email: ADMIN_EMAIL } });
+  const phone = parseKenyanPhone(phoneRaw) as string;
+  const tenant = await prisma.tenant.findFirst({
+    where: { OR: [{ phone }, { phone: phoneRaw.replace(/\s/g, "").replace(/^\+?0/, "0") }] },
+  });
 
-  if (!admin || !admin.phone || admin.phone !== parseKenyanPhone(phoneRaw)) {
-    return jsonError("Incorrect phone number or code.", 401);
+  if (!tenant) {
+    return jsonError("No tenant account was found for this number.", 404);
   }
 
-  if (!admin.otpCodeHash || !admin.otpExpiresAt) {
+  if (!tenant.otpCodeHash || !tenant.otpExpiresAt) {
     return jsonError("No code has been sent. Request a new one.", 400);
   }
 
-  if (admin.otpExpiresAt.getTime() < Date.now()) {
+  if (tenant.otpExpiresAt.getTime() < Date.now()) {
     return jsonError("This code has expired. Request a new one.", 400);
   }
 
-  if (admin.otpLockedUntil && admin.otpLockedUntil.getTime() > Date.now()) {
-    const minutes = Math.max(1, Math.ceil((admin.otpLockedUntil.getTime() - Date.now()) / 60000));
+  if (tenant.otpLockedUntil && tenant.otpLockedUntil.getTime() > Date.now()) {
+    const minutes = Math.max(1, Math.ceil((tenant.otpLockedUntil.getTime() - Date.now()) / 60000));
     return jsonError(`Too many failed attempts. Try again in ${minutes} minute${minutes === 1 ? "" : "s"}.`, 429);
   }
 
-  if (!verifyOtp(code, admin.otpCodeHash)) {
-    const attempts = admin.otpAttempts + 1;
+  if (!verifyOtp(code, tenant.otpCodeHash)) {
+    const attempts = tenant.otpAttempts + 1;
     const data =
       attempts >= MAX_OTP_ATTEMPTS
         ? { otpAttempts: 0, otpLockedUntil: new Date(Date.now() + OTP_LOCK_MS) }
         : { otpAttempts: attempts };
 
-    await prisma.user.update({ where: { id: admin.id }, data });
+    await prisma.tenant.update({ where: { id: tenant.id }, data });
 
     if (attempts >= MAX_OTP_ATTEMPTS) {
       return jsonError("Too many failed attempts. Try again in 15 minutes.", 429);
@@ -61,18 +64,18 @@ export async function POST(request: Request) {
     return jsonError("Incorrect code. Try again.", 401);
   }
 
-  await prisma.user.update({
-    where: { id: admin.id },
+  await prisma.tenant.update({
+    where: { id: tenant.id },
     data: { otpCodeHash: null, otpExpiresAt: null, otpAttempts: 0, otpLockedUntil: null },
   });
 
-  const token = createSessionToken(admin.id);
+  const token = createSessionToken(tenant.id);
 
   return NextResponse.json(
     {
       ok: true,
-      user: { id: admin.id, name: admin.name, email: admin.email, role: admin.role },
+      tenant: { id: tenant.id, propertyId: tenant.propertyId, fullName: tenant.fullName, phone: tenant.phone },
     },
-    { headers: { "Set-Cookie": sessionCookieHeader(token) } },
+    { headers: { "Set-Cookie": tenantSessionCookieHeader(token) } },
   );
 }
