@@ -10,9 +10,12 @@ type PortalLease = {
   id: string;
   unitName: string | null;
   unitCode: string | null;
+  paymentAccountRef: string | null;
   monthlyRent: number;
   paid: number;
   balance: number;
+  depositRequired: number;
+  depositPaid: number;
   nextDueDate: string;
 };
 
@@ -31,6 +34,7 @@ type PortalData = {
   leases: PortalLease[];
   payments: PortalPayment[];
   totalBalance: number;
+  paybillNumber: string | null;
   mpesaConfigured: boolean;
 };
 
@@ -184,21 +188,27 @@ export default function TenantDashboard({ tenant }: { tenant: Tenant }) {
                         <tr>
                           <th className="border-b border-navy/10 px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-navy/60">Unit</th>
                           <th className="border-b border-navy/10 px-3 py-2 text-right text-xs font-semibold uppercase tracking-wide text-navy/60">Monthly rent</th>
+                          <th className="border-b border-navy/10 px-3 py-2 text-right text-xs font-semibold uppercase tracking-wide text-navy/60">Deposit</th>
                           <th className="border-b border-navy/10 px-3 py-2 text-right text-xs font-semibold uppercase tracking-wide text-navy/60">Paid</th>
                           <th className="border-b border-navy/10 px-3 py-2 text-right text-xs font-semibold uppercase tracking-wide text-navy/60">Balance</th>
                           <th className="border-b border-navy/10 px-3 py-2 text-right text-xs font-semibold uppercase tracking-wide text-navy/60">Next due</th>
                         </tr>
                       </thead>
                       <tbody>
-                        {data.leases.map((lease) => (
-                          <tr key={lease.id}>
-                            <td className="border-b border-navy/10 px-3 py-2 font-medium text-navy">{lease.unitName ?? "—"}</td>
-                            <td className="border-b border-navy/10 px-3 py-2 text-right text-slate-700">{formatMoney(lease.monthlyRent)}</td>
-                            <td className="border-b border-navy/10 px-3 py-2 text-right text-slate-700">{formatMoney(lease.paid)}</td>
-                            <td className={`border-b border-navy/10 px-3 py-2 text-right font-semibold ${lease.balance > 0 ? "text-rose-600" : "text-leaf-dark"}`}>{formatMoney(lease.balance)}</td>
-                            <td className="border-b border-navy/10 px-3 py-2 text-right text-slate-700">{formatDate(lease.nextDueDate)}</td>
-                          </tr>
-                        ))}
+                        {data.leases.map((lease) => {
+                          const depositDue = lease.depositRequired - lease.depositPaid;
+
+                          return (
+                            <tr key={lease.id}>
+                              <td className="border-b border-navy/10 px-3 py-2 font-medium text-navy">{lease.unitName ?? "—"}</td>
+                              <td className="border-b border-navy/10 px-3 py-2 text-right text-slate-700">{formatMoney(lease.monthlyRent)}</td>
+                              <td className={`border-b border-navy/10 px-3 py-2 text-right ${depositDue > 0 ? "font-semibold text-amber-600" : "text-leaf-dark"}`}>{depositDue > 0 ? `${formatMoney(lease.depositPaid)} / ${formatMoney(lease.depositRequired)}` : "Paid"}</td>
+                              <td className="border-b border-navy/10 px-3 py-2 text-right text-slate-700">{formatMoney(lease.paid)}</td>
+                              <td className={`border-b border-navy/10 px-3 py-2 text-right font-semibold ${lease.balance > 0 ? "text-rose-600" : "text-leaf-dark"}`}>{formatMoney(lease.balance)}</td>
+                              <td className="border-b border-navy/10 px-3 py-2 text-right text-slate-700">{formatDate(lease.nextDueDate)}</td>
+                            </tr>
+                          );
+                        })}
                       </tbody>
                     </table>
                   </div>
@@ -240,11 +250,28 @@ export default function TenantDashboard({ tenant }: { tenant: Tenant }) {
 
         <aside className="h-fit rounded-2xl bg-navy-light p-6">
           <h2 className="text-lg font-bold text-navy">Pay rent via M-Pesa</h2>
-          <p className="mt-2 text-sm text-slate-600">The payment request is sent straight to your phone. Approve it with your M-Pesa PIN and it lands in your account automatically.</p>
+          <p className="mt-2 text-sm text-slate-600">Approve the request sent to your phone with your M-Pesa PIN and it lands in your account automatically.</p>
+
+          {data?.paybillNumber && activeLease?.paymentAccountRef ? (
+            <div className="mt-4 rounded-xl border border-navy/15 bg-white px-4 py-3 text-sm text-slate-700">
+              <div className="font-semibold text-navy">Pay directly from M-Pesa</div>
+              <div className="mt-1.5 flex items-center justify-between gap-3">
+                <span className="text-slate-500">Paybill</span>
+                <span className="font-bold tracking-wide text-navy">{data.paybillNumber}</span>
+              </div>
+              <div className="mt-1 flex items-center justify-between gap-3">
+                <span className="text-slate-500">Account number</span>
+                <span className="font-bold tracking-wide text-navy">{activeLease.paymentAccountRef}</span>
+              </div>
+              <p className="mt-2 text-xs text-slate-500">Open M-Pesa → Lipa na M-Pesa → Paybill → enter the number above, then the account number. Your payment is matched to your account automatically.</p>
+            </div>
+          ) : null}
 
           {!data?.mpesaConfigured ? (
             <p className="mt-4 rounded-xl border border-gold/40 bg-gold/10 px-4 py-3 text-sm text-slate-700">
-              Online payments are not enabled yet. Please contact the property office or pay directly to the paybill number.
+              {data?.paybillNumber
+                ? "Online payment requests are not enabled yet — use the Paybill details above to pay directly from your M-Pesa app."
+                : "Online payments are not enabled yet. Please contact the property office for the paybill number to use."}
             </p>
           ) : (
             <form className="mt-4" onSubmit={payRent}>
@@ -267,7 +294,7 @@ export default function TenantDashboard({ tenant }: { tenant: Tenant }) {
                 disabled={paying || !Number(amount) || Number(amount) <= 0}
                 className="mt-4 w-full rounded-full bg-leaf px-6 py-3 text-sm font-semibold text-white transition hover:bg-leaf-dark disabled:opacity-60"
               >
-                {paying ? "Sending request…" : "Request payment"}
+                {paying ? "Sending request…" : "Request payment to my phone"}
               </button>
             </form>
           )}

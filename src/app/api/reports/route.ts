@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { jsonError } from "../_shared";
+import { requireAdmin } from "@/lib/auth";
 import { leaseBalance } from "@/lib/rental";
 
 function monthRange(month: string) {
@@ -20,10 +21,10 @@ function currentMonth() {
 async function confirmedPaymentsTotal(leaseId: string) {
   const result = await prisma.payment.aggregate({
     where: { leaseId, status: "CONFIRMED" },
-    _sum: { amount: true },
+    _sum: { rentPortion: true },
   });
 
-  return Number(result._sum.amount ?? 0);
+  return Number(result._sum.rentPortion ?? 0);
 }
 
 async function rentCollectionReport(propertyId: string, month: string) {
@@ -191,7 +192,7 @@ async function tenantStatementReport(tenantId: string, propertyId: string) {
   const leaseRows = tenant.leases.map((lease) => {
     const paid = tenant.payments
       .filter((payment) => payment.leaseId === lease.id && payment.status === "CONFIRMED")
-      .reduce((total, payment) => total + Number(payment.amount), 0);
+      .reduce((total, payment) => total + Number(payment.rentPortion), 0);
     const balance = leaseBalance(lease, paid, now);
 
     return {
@@ -209,7 +210,7 @@ async function tenantStatementReport(tenantId: string, propertyId: string) {
 
   const confirmedPaid = tenant.payments
     .filter((payment) => payment.status === "CONFIRMED")
-    .reduce((total, payment) => total + Number(payment.amount), 0);
+    .reduce((total, payment) => total + Number(payment.rentPortion), 0);
 
   return {
     type: "tenant-statement",
@@ -226,6 +227,9 @@ async function tenantStatementReport(tenantId: string, propertyId: string) {
       amount: Number(payment.amount),
       method: payment.method,
       status: payment.status,
+      allocation: payment.allocation,
+      depositPortion: Number(payment.depositPortion),
+      rentPortion: Number(payment.rentPortion),
       reference: payment.reference,
     })),
     summary: { confirmedPaid },
@@ -283,6 +287,12 @@ async function paymentSummaryReport(propertyId: string, month: string | null) {
 }
 
 export async function GET(request: Request) {
+  const auth = await requireAdmin();
+
+  if (auth instanceof NextResponse) {
+    return auth;
+  }
+
   const url = new URL(request.url);
   const type = url.searchParams.get("type") ?? "";
   const propertyId = url.searchParams.get("propertyId") ?? "";

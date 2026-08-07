@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSmsConfig } from "@/lib/termii";
-import { requireAdmin } from "@/lib/auth";
+import { getEmailConfig } from "@/lib/email";
+import { requireStaff } from "@/lib/auth";
 
-type PropertyRecord = Awaited<ReturnType<typeof prisma.property.findMany>>[number];
 type FloorRecord = Awaited<ReturnType<typeof prisma.floor.findMany>>[number];
 type UnitTypeRecord = Awaited<ReturnType<typeof prisma.unitType.findMany>>[number];
 type UnitRecord = Awaited<ReturnType<typeof prisma.unit.findMany>>[number];
@@ -25,14 +25,19 @@ function serializeDecimal(value: unknown) {
 }
 
 export async function GET() {
-  const auth = await requireAdmin();
+  const auth = await requireStaff();
 
   if (auth instanceof NextResponse) {
     return auth;
   }
 
-  const [properties, floors, unitTypes, units, tenants, leases, payments, messages, incoming, expenses, maintenance, inquiries]: [
-    PropertyRecord[],
+  const isAgent = auth.user.role === "AGENT_CARETAKER";
+  const propertyFilter = isAgent ? { managerId: auth.user.id } : {};
+
+  const properties = await prisma.property.findMany({ where: propertyFilter, orderBy: [{ createdAt: "asc" }] });
+  const incomingFilter = isAgent ? { propertyId: { in: properties.map((property) => property.id) } } : {};
+
+  const [floors, unitTypes, units, tenants, leases, payments, messages, incoming, expenses, maintenance, inquiries]: [
     FloorRecord[],
     UnitTypeRecord[],
     UnitRecord[],
@@ -45,27 +50,33 @@ export async function GET() {
     MaintenanceRequestRecord[],
     InquiryRecord[],
   ] = await Promise.all([
-    prisma.property.findMany({ orderBy: [{ createdAt: "asc" }] }),
-    prisma.floor.findMany({ orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }] }),
-    prisma.unitType.findMany({ orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }] }),
-    prisma.unit.findMany({ orderBy: [{ createdAt: "asc" }] }),
-    prisma.tenant.findMany({ orderBy: [{ createdAt: "asc" }] }),
-    prisma.lease.findMany({ orderBy: [{ createdAt: "asc" }] }),
-    prisma.payment.findMany({ orderBy: [{ receivedAt: "desc" }] }),
-    prisma.message.findMany({ orderBy: [{ createdAt: "desc" }], take: 100 }),
-    prisma.incomingPayment.findMany({ orderBy: [{ status: "asc" }, { receivedAt: "desc" }], take: 200 }),
-    prisma.expense.findMany({ orderBy: [{ occurredAt: "desc" }], take: 500 }),
-    prisma.maintenanceRequest.findMany({ orderBy: [{ status: "asc" }, { priority: "desc" }, { createdAt: "desc" }], take: 200 }),
-    prisma.inquiry.findMany({ orderBy: [{ status: "asc" }, { createdAt: "desc" }], take: 200 }),
+    prisma.floor.findMany({ where: { property: propertyFilter }, orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }] }),
+    prisma.unitType.findMany({ where: { property: propertyFilter }, orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }] }),
+    prisma.unit.findMany({ where: { property: propertyFilter }, orderBy: [{ createdAt: "asc" }] }),
+    prisma.tenant.findMany({ where: { property: propertyFilter }, orderBy: [{ createdAt: "asc" }] }),
+    prisma.lease.findMany({ where: { property: propertyFilter }, orderBy: [{ createdAt: "asc" }] }),
+    prisma.payment.findMany({ where: { property: propertyFilter }, orderBy: [{ receivedAt: "desc" }] }),
+    prisma.message.findMany({ where: { property: propertyFilter }, orderBy: [{ createdAt: "desc" }], take: 100 }),
+    prisma.incomingPayment.findMany({ where: incomingFilter, orderBy: [{ status: "asc" }, { receivedAt: "desc" }], take: 200 }),
+    prisma.expense.findMany({ where: { property: propertyFilter }, orderBy: [{ occurredAt: "desc" }], take: 500 }),
+    prisma.maintenanceRequest.findMany({ where: { property: propertyFilter }, orderBy: [{ status: "asc" }, { priority: "desc" }, { createdAt: "desc" }], take: 200 }),
+    prisma.inquiry.findMany({ where: { property: propertyFilter }, orderBy: [{ status: "asc" }, { createdAt: "desc" }], take: 200 }),
   ]);
 
   const smsConfig = getSmsConfig();
+  const emailConfig = getEmailConfig();
 
   return NextResponse.json({
+    role: auth.user.role,
     sms: {
       configured: smsConfig !== null,
       mode: smsConfig ? "termii" : "simulated",
       senderId: smsConfig?.senderId ?? null,
+    },
+    email: {
+      configured: emailConfig !== null,
+      mode: emailConfig ? "resend" : "simulated",
+      from: emailConfig?.from ?? null,
     },
     properties: properties.map((property) => ({
       ...property,

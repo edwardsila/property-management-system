@@ -1,8 +1,15 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getString, jsonError, parseSortOrder } from "../../_shared";
+import { requireAdmin } from "@/lib/auth";
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ floorId: string }> }) {
+  const auth = await requireAdmin();
+
+  if (auth instanceof NextResponse) {
+    return auth;
+  }
+
   const { floorId } = await params;
   const body = await request.json().catch(() => null);
 
@@ -26,6 +33,12 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ fl
 }
 
 export async function DELETE(_request: Request, { params }: { params: Promise<{ floorId: string }> }) {
+  const auth = await requireAdmin();
+
+  if (auth instanceof NextResponse) {
+    return auth;
+  }
+
   const { floorId } = await params;
 
   await prisma.floor.delete({ where: { id: floorId } });

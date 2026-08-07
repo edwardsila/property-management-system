@@ -21,6 +21,21 @@ export type StkPushResult =
       error: string;
     };
 
+export type StkQueryResult =
+  | {
+      ok: true;
+      resultCode: string;
+      resultDesc: string;
+      transactionId?: string;
+      amount?: number;
+      phone?: string;
+      reference?: string;
+    }
+  | {
+      ok: false;
+      error: string;
+    };
+
 function getShortCode() {
   return process.env.MPESA_SHORTCODE?.trim() ?? "";
 }
@@ -101,11 +116,15 @@ export async function stkPush({
   amount,
   accountReference,
   transactionDesc = "Rent payment",
+  shortcode,
+  passkey,
 }: {
   phone: string;
   amount: number;
   accountReference: string;
   transactionDesc?: string;
+  shortcode?: string;
+  passkey?: string;
 }): Promise<StkPushResult> {
   const config = getDarajaConfig();
 
@@ -117,9 +136,12 @@ export async function stkPush({
     return { ok: false, error: "M-Pesa accepts whole amounts between KES 1 and KES 150,000." };
   }
 
+  const businessShortCode = shortcode?.trim() || config.shortcode;
+  const businessPasskey = passkey?.trim() || config.passkey;
+
   const token = await getAccessToken(config);
   const timestamp = eatTimestamp();
-  const password = Buffer.from(`${config.shortcode}${config.passkey}${timestamp}`).toString("base64");
+  const password = Buffer.from(`${businessShortCode}${businessPasskey}${timestamp}`).toString("base64");
 
   const response = await fetch(`${config.baseUrl}/mpesa/stkpush/v1/processrequest`, {
     method: "POST",
@@ -128,13 +150,13 @@ export async function stkPush({
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      BusinessShortCode: config.shortcode,
+      BusinessShortCode: businessShortCode,
       Password: password,
       Timestamp: timestamp,
       TransactionType: config.transactionType,
       Amount: amount,
       PartyA: phone,
-      PartyB: config.shortcode,
+      PartyB: businessShortCode,
       PhoneNumber: phone,
       CallBackURL: `${config.callbackUrl.replace(/\/+$/, "")}/api/integrations/daraja/callback`,
       AccountReference: accountReference,
@@ -166,4 +188,93 @@ export async function stkPush({
     responseDescription: data.ResponseDescription ?? "",
     customerMessage: data.CustomerMessage,
   };
+}
+
+export async function stkQuery({
+  checkoutRequestId,
+  shortcode,
+  passkey,
+}: {
+  checkoutRequestId: string;
+  shortcode?: string;
+  passkey?: string;
+}): Promise<StkQueryResult> {
+  const config = getDarajaConfig();
+
+  if (!config) {
+    return { ok: false, error: "M-Pesa payments are not configured yet." };
+  }
+
+  const businessShortCode = shortcode?.trim() || config.shortcode;
+  const businessPasskey = passkey?.trim() || config.passkey;
+
+  try {
+    const token = await getAccessToken(config);
+    const timestamp = eatTimestamp();
+    const password = Buffer.from(`${businessShortCode}${businessPasskey}${timestamp}`).toString("base64");
+
+    const response = await fetch(`${config.baseUrl}/mpesa/stkpushquery/v1/query`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        BusinessShortCode: businessShortCode,
+        Password: password,
+        Timestamp: timestamp,
+        CheckoutRequestID: checkoutRequestId,
+      }),
+      cache: "no-store",
+    });
+
+    const data = (await response.json().catch(() => null)) as
+      | {
+          ResponseCode?: string;
+          ResponseDescription?: string;
+          ResultCode?: string;
+          ResultDesc?: string;
+          CheckoutRequestID?: string;
+          errorCode?: string;
+          errorMessage?: string;
+          CallbackMetadata?: { Item?: Array<{ Name?: string; Value?: string | number }> };
+        }
+      | null;
+
+    if (!response.ok) {
+      return { ok: false, error: data?.errorMessage ?? data?.errorCode ?? `M-Pesa query failed (${response.status}).` };
+    }
+
+    const resultCode = data?.ResultCode ?? data?.ResponseCode ?? "";
+    const resultDesc = data?.ResultDesc ?? data?.ResponseDescription ?? "";
+
+    let transactionId: string | undefined;
+    let amount: number | undefined;
+    let phone: string | undefined;
+    let reference: string | undefined;
+
+    for (const item of data?.CallbackMetadata?.Item ?? []) {
+      const name = item.Name ?? "";
+
+      if (name === "MpesaReceiptNumber") {
+        transactionId = String(item.Value ?? "");
+      }
+
+      if (name === "Amount") {
+        amount = Number(item.Value);
+      }
+
+      if (name === "PhoneNumber") {
+        phone = String(item.Value ?? "");
+      }
+
+      if (name === "BillRefNumber" || name === "AccountReference") {
+        reference = String(item.Value ?? "");
+      }
+    }
+
+    return { ok: true, resultCode, resultDesc, transactionId, amount, phone, reference };
+  } catch (requestError) {
+    return { ok: false, error: requestError instanceof Error ? requestError.message : "M-Pesa query failed." };
+  }
 }

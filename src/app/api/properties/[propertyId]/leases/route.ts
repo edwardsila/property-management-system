@@ -1,10 +1,18 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getString, jsonError } from "../../../_shared";
+import { requireAdmin } from "@/lib/auth";
+import { autoApplyHeldPayments } from "@/lib/reconcile";
 
 type LeaseStatus = "DRAFT" | "ACTIVE" | "ENDED" | "TERMINATED";
 
 export async function GET(_request: Request, { params }: { params: Promise<{ propertyId: string }> }) {
+  const auth = await requireAdmin();
+
+  if (auth instanceof NextResponse) {
+    return auth;
+  }
+
   const { propertyId } = await params;
   const leases = await prisma.lease.findMany({
     where: { propertyId },
@@ -15,6 +23,12 @@ export async function GET(_request: Request, { params }: { params: Promise<{ pro
 }
 
 export async function POST(request: Request, { params }: { params: Promise<{ propertyId: string }> }) {
+  const auth = await requireAdmin();
+
+  if (auth instanceof NextResponse) {
+    return auth;
+  }
+
   const { propertyId } = await params;
   const body = await request.json().catch(() => null);
 
@@ -47,5 +61,13 @@ export async function POST(request: Request, { params }: { params: Promise<{ pro
     },
   });
 
-  return NextResponse.json({ lease }, { status: 201 });
+  const unit = await prisma.unit.findUnique({ where: { id: unitId }, select: { status: true } });
+
+  if (lease.status === "DRAFT" && unit?.status === "VACANT") {
+    await prisma.unit.update({ where: { id: unitId }, data: { status: "RESERVED" } });
+  }
+
+  const appliedPayments = await autoApplyHeldPayments({ leaseId: lease.id, tenantId, unitId, propertyId });
+
+  return NextResponse.json({ lease, appliedPayments }, { status: 201 });
 }

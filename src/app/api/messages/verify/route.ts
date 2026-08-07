@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { jsonError } from "../../_shared";
+import { requireAdmin } from "@/lib/auth";
 import { sendSms, isSmsConfigured } from "@/lib/termii";
 import { isValidKenyanMobile, parseKenyanPhone } from "@/lib/phone";
 
@@ -8,6 +9,12 @@ function getString(value: unknown) {
 }
 
 export async function POST(request: Request) {
+  const auth = await requireAdmin();
+
+  if (auth instanceof NextResponse) {
+    return auth;
+  }
+
   const body = (await request.json().catch(() => null)) as Record<string, unknown> | null;
 
   if (!body) {

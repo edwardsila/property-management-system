@@ -178,7 +178,7 @@ export default function AdminLoginPage() {
                 {step === "phone"
                   ? setup
                     ? "Set up your administrator phone number"
-                    : "Administrator sign in"
+                    : "Owner or agent sign in"
                   : "Enter the verification code"}
               </p>
             </div>

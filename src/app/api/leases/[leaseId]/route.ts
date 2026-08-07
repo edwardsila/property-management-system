@@ -1,10 +1,17 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getString, jsonError } from "../../_shared";
+import { requireAdmin } from "@/lib/auth";
 
 type LeaseStatus = "DRAFT" | "ACTIVE" | "ENDED" | "TERMINATED";
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ leaseId: string }> }) {
+  const auth = await requireAdmin();
+
+  if (auth instanceof NextResponse) {
+    return auth;
+  }
+
   const { leaseId } = await params;
   const body = await request.json().catch(() => null);
 
@@ -37,6 +44,12 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ le
 }
 
 export async function DELETE(_request: Request, { params }: { params: Promise<{ leaseId: string }> }) {
+  const auth = await requireAdmin();
+
+  if (auth instanceof NextResponse) {
+    return auth;
+  }
+
   const { leaseId } = await params;
 
   await prisma.lease.delete({ where: { id: leaseId } });

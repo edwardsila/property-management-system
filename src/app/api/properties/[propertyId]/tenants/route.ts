@@ -1,10 +1,25 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getString, jsonError } from "../../../_shared";
+import { requireStaff } from "@/lib/auth";
+import { requireStaffForProperty } from "@/lib/auth";
 import { isValidKenyanMobile, parseKenyanPhone } from "@/lib/phone";
+import { attachIncomingPaymentsByPhone } from "@/lib/reconcile";
 
 export async function GET(_request: Request, { params }: { params: Promise<{ propertyId: string }> }) {
+  const auth = await requireStaff();
+
+  if (auth instanceof NextResponse) {
+    return auth;
+  }
+
   const { propertyId } = await params;
+  const scopeError = await requireStaffForProperty(auth.user.id, auth.user.role, propertyId);
+
+  if (scopeError) {
+    return scopeError;
+  }
+
   const tenants = await prisma.tenant.findMany({
     where: { propertyId },
     orderBy: [{ createdAt: "asc" }],
@@ -14,7 +29,19 @@ export async function GET(_request: Request, { params }: { params: Promise<{ pro
 }
 
 export async function POST(request: Request, { params }: { params: Promise<{ propertyId: string }> }) {
+  const auth = await requireStaff();
+
+  if (auth instanceof NextResponse) {
+    return auth;
+  }
+
   const { propertyId } = await params;
+  const scopeError = await requireStaffForProperty(auth.user.id, auth.user.role, propertyId);
+
+  if (scopeError) {
+    return scopeError;
+  }
+
   const body = await request.json().catch(() => null);
 
   if (!body) {
@@ -44,6 +71,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ pro
   const tenant = await prisma.tenant.create({
     data: {
       propertyId,
+      createdById: auth.user.id,
       fullName,
       phone,
       email: getString(body.email) || null,
@@ -54,5 +82,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ pro
     },
   });
 
-  return NextResponse.json({ tenant }, { status: 201 });
+  const attached = await attachIncomingPaymentsByPhone({ tenantId: tenant.id, propertyId, phone });
+
+  return NextResponse.json({ tenant, attachedPayments: attached }, { status: 201 });
 }

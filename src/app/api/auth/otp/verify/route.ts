@@ -1,10 +1,12 @@
 import { NextResponse } from "next/server";
+import type { UserRole } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { getString, jsonError } from "../../../_shared";
-import { ADMIN_EMAIL, createSessionToken, sessionCookieHeader } from "@/lib/auth";
+import { createSessionToken, sessionCookieHeader } from "@/lib/auth";
 import { verifyOtp } from "@/lib/otp";
 import { isValidKenyanMobile, parseKenyanPhone } from "@/lib/phone";
 
+const STAFF_ROLES: UserRole[] = ["OWNER", "AGENT_CARETAKER"];
 const MAX_OTP_ATTEMPTS = 5;
 const OTP_LOCK_MS = 15 * 60 * 1000;
 
@@ -26,33 +28,36 @@ export async function POST(request: Request) {
     return jsonError("Enter the 6-digit code.");
   }
 
-  const admin = await prisma.user.findUnique({ where: { email: ADMIN_EMAIL } });
+  const phone = parseKenyanPhone(phoneRaw) as string;
+  const user = await prisma.user.findFirst({
+    where: { phone, role: { in: STAFF_ROLES } },
+  });
 
-  if (!admin || !admin.phone || admin.phone !== parseKenyanPhone(phoneRaw)) {
+  if (!user) {
     return jsonError("Incorrect phone number or code.", 401);
   }
 
-  if (!admin.otpCodeHash || !admin.otpExpiresAt) {
+  if (!user.otpCodeHash || !user.otpExpiresAt) {
     return jsonError("No code has been sent. Request a new one.", 400);
   }
 
-  if (admin.otpExpiresAt.getTime() < Date.now()) {
+  if (user.otpExpiresAt.getTime() < Date.now()) {
     return jsonError("This code has expired. Request a new one.", 400);
   }
 
-  if (admin.otpLockedUntil && admin.otpLockedUntil.getTime() > Date.now()) {
-    const minutes = Math.max(1, Math.ceil((admin.otpLockedUntil.getTime() - Date.now()) / 60000));
+  if (user.otpLockedUntil && user.otpLockedUntil.getTime() > Date.now()) {
+    const minutes = Math.max(1, Math.ceil((user.otpLockedUntil.getTime() - Date.now()) / 60000));
     return jsonError(`Too many failed attempts. Try again in ${minutes} minute${minutes === 1 ? "" : "s"}.`, 429);
   }
 
-  if (!verifyOtp(code, admin.otpCodeHash)) {
-    const attempts = admin.otpAttempts + 1;
+  if (!verifyOtp(code, user.otpCodeHash)) {
+    const attempts = user.otpAttempts + 1;
     const data =
       attempts >= MAX_OTP_ATTEMPTS
         ? { otpAttempts: 0, otpLockedUntil: new Date(Date.now() + OTP_LOCK_MS) }
         : { otpAttempts: attempts };
 
-    await prisma.user.update({ where: { id: admin.id }, data });
+    await prisma.user.update({ where: { id: user.id }, data });
 
     if (attempts >= MAX_OTP_ATTEMPTS) {
       return jsonError("Too many failed attempts. Try again in 15 minutes.", 429);
@@ -62,16 +67,16 @@ export async function POST(request: Request) {
   }
 
   await prisma.user.update({
-    where: { id: admin.id },
+    where: { id: user.id },
     data: { otpCodeHash: null, otpExpiresAt: null, otpAttempts: 0, otpLockedUntil: null },
   });
 
-  const token = createSessionToken(admin.id);
+  const token = createSessionToken(user.id);
 
   return NextResponse.json(
     {
       ok: true,
-      user: { id: admin.id, name: admin.name, email: admin.email, role: admin.role },
+      user: { id: user.id, name: user.name, email: user.email, role: user.role },
     },
     { headers: { "Set-Cookie": sessionCookieHeader(token) } },
   );

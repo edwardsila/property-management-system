@@ -1,5 +1,17 @@
+import { prisma } from "@/lib/prisma";
+
 export function serializeDecimal(value: unknown) {
   return value == null ? "" : String(value);
+}
+
+export type PaymentAllocation = "DEPOSIT" | "RENT" | "MIXED";
+
+export function allocatePayment({ amount, depositRequired, depositPaid }: { amount: number; depositRequired: number; depositPaid: number }) {
+  const depositPortion = Math.min(amount, Math.max(0, depositRequired - depositPaid));
+  const rentPortion = amount - depositPortion;
+  const allocation: PaymentAllocation = depositPortion > 0 && rentPortion > 0 ? "MIXED" : depositPortion > 0 ? "DEPOSIT" : "RENT";
+
+  return { depositPortion, rentPortion, allocation };
 }
 
 export function formatMoney(value: number) {
@@ -29,6 +41,18 @@ export function nextRentDueDate(start: Date, graceDays: number, now = new Date()
 
 export function formatDate(value: Date) {
   return value.toLocaleDateString("en-KE", { day: "numeric", month: "short", year: "numeric" });
+}
+
+export async function paymentTotalsForLease(leaseId: string) {
+  const result = await prisma.payment.aggregate({
+    where: { leaseId, status: "CONFIRMED" },
+    _sum: { rentPortion: true, depositPortion: true },
+  });
+
+  return {
+    rentPaid: Number(result._sum.rentPortion ?? 0),
+    depositPaid: Number(result._sum.depositPortion ?? 0),
+  };
 }
 
 type LeaseLike = {

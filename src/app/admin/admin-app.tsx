@@ -38,6 +38,8 @@ type Property = {
   location: string;
   description: string | null;
   notes: string | null;
+  paybillNumber: string | null;
+  paybillPasskey: string | null;
 };
 
 type Floor = {
@@ -65,6 +67,7 @@ type Unit = {
   unitTypeId: string | null;
   unitName: string;
   unitCode: string | null;
+  paymentAccountRef: string | null;
   status: UnitStatus;
   rentAmount: string | null;
   depositAmount: string | null;
@@ -100,6 +103,8 @@ type Lease = {
   notes: string | null;
 };
 
+type PaymentAllocation = "DEPOSIT" | "RENT" | "MIXED";
+
 type Payment = {
   id: string;
   propertyId: string;
@@ -108,6 +113,9 @@ type Payment = {
   amount: string;
   method: PaymentMethod;
   status: PaymentStatus;
+  allocation: PaymentAllocation;
+  depositPortion: string;
+  rentPortion: string;
   reference: string | null;
   receivedAt: string;
   notes: string | null;
@@ -120,6 +128,7 @@ type IncomingPayment = {
   propertyId: string | null;
   tenantId: string | null;
   leaseId: string | null;
+  unitId: string | null;
   amount: string;
   method: PaymentMethod;
   source: string;
@@ -128,6 +137,7 @@ type IncomingPayment = {
   transactionId: string | null;
   receivedAt: string;
   status: IncomingPaymentStatus;
+  matchedBy: string | null;
   matchNote: string | null;
   notes: string | null;
   matchedAt: string | null;
@@ -135,7 +145,7 @@ type IncomingPayment = {
   updatedAt: string;
 };
 
-type MessageType = "RENT_DUE" | "BALANCE" | "PAYMENT_RECEIVED" | "MANUAL";
+type MessageType = "RENT_DUE" | "BALANCE" | "PAYMENT_RECEIVED" | "LEASE_ACTIVATED" | "MANUAL";
 type MessageChannel = "SMS" | "EMAIL";
 type MessageStatus = "QUEUED" | "SENT" | "FAILED";
 type RecipientMode = "ALL_TENANTS" | "IN_ARREARS" | "SPECIFIC";
@@ -230,8 +240,25 @@ type PaymentSummaryReport = {
 
 type ReportResult = RentCollectionReport | ArrearsReport | OccupancyReport | TenantStatementReport | PaymentSummaryReport;
 
+type StaffMember = {
+  id: string;
+  name: string;
+  email: string;
+  phone: string | null;
+  createdAt: string;
+  managedPropertyIds: string[];
+};
+
+type StaffForm = {
+  name: string;
+  phone: string;
+  propertyIds: string[];
+};
+
 type BootstrapPayload = {
+  role: "OWNER" | "AGENT_CARETAKER";
   sms: { configured: boolean; mode: "termii" | "simulated"; senderId: string | null };
+  email: { configured: boolean; mode: "resend" | "simulated"; from: string | null };
   properties: Property[];
   floors: Floor[];
   unitTypes: UnitType[];
@@ -336,6 +363,7 @@ const messageTypeExamples: Record<MessageType, string> = {
   RENT_DUE: "Hi John, your rent of KES 7,500 for A1 is due by 28 Aug 2026. Please pay on time to keep your account in good standing.",
   BALANCE: "Hi John, your outstanding balance for A1 is KES 7,500. Kindly settle your account soon.",
   PAYMENT_RECEIVED: "Hi John, we confirm receipt of KES 7,500 for A1. Thank you.",
+  LEASE_ACTIVATED: "Hi John, your first rent for A1 is fully paid. Your unit is now active — welcome in!",
   MANUAL: "Write your own message. The tenant name and unit are not inserted automatically.",
 };
 
@@ -355,9 +383,13 @@ const badgeColors: Record<string, string> = {
   BANK: "border-blue-500/30 bg-blue-500/10 text-blue-300",
   CASH: "border-slate-500/30 bg-slate-500/10 text-slate-300",
   OTHER: "border-slate-500/30 bg-slate-500/10 text-slate-300",
+  DEPOSIT: "border-violet-500/30 bg-violet-500/10 text-violet-300",
+  RENT: "border-emerald-500/30 bg-emerald-500/10 text-emerald-300",
+  MIXED: "border-sky-500/30 bg-sky-500/10 text-sky-300",
   RENT_DUE: "border-amber-500/30 bg-amber-500/10 text-amber-300",
   BALANCE: "border-rose-500/30 bg-rose-500/10 text-rose-300",
   PAYMENT_RECEIVED: "border-emerald-500/30 bg-emerald-500/10 text-emerald-300",
+  LEASE_ACTIVATED: "border-emerald-500/30 bg-emerald-500/10 text-emerald-300",
   MANUAL: "border-sky-500/30 bg-sky-500/10 text-sky-300",
   QUEUED: "border-amber-500/30 bg-amber-500/10 text-amber-300",
   SENT: "border-emerald-500/30 bg-emerald-500/10 text-emerald-300",
@@ -477,6 +509,8 @@ function emptyProperty(): Property {
     location: "",
     description: null,
     notes: null,
+    paybillNumber: null,
+    paybillPasskey: null,
   };
 }
 
@@ -510,6 +544,7 @@ function emptyUnit(propertyId = ""): Unit {
     unitTypeId: null,
     unitName: "",
     unitCode: null,
+    paymentAccountRef: null,
     status: "VACANT",
     rentAmount: null,
     depositAmount: null,
@@ -559,6 +594,9 @@ function emptyPayment(propertyId = ""): Payment {
     amount: "",
     method: "CASH",
     status: "CONFIRMED",
+    allocation: "RENT",
+    depositPortion: "0",
+    rentPortion: "0",
     reference: null,
     receivedAt: new Date().toISOString(),
     notes: null,
@@ -641,13 +679,24 @@ const sectionLabels: Record<string, string> = {
   inquiries: "Inquiries",
   messages: "Messages",
   reports: "Reports",
+  staff: "Staff",
 };
 
 type SectionId = keyof typeof sectionLabels;
 type ToastState = { type: "success" | "error"; message: string } | null;
 
+const agentSections: SectionId[] = ["units", "tenants", "leases", "payments", "maintenance"];
+
+const roleLabels: Record<string, string> = {
+  OWNER: "Owner",
+  AGENT_CARETAKER: "Agent",
+};
+
 export default function AdminApp({ user }: { user: AdminUser }) {
   const router = useRouter();
+
+  const isOwner = user.role === "OWNER";
+  const visibleSections = useMemo<SectionId[]>(() => (isOwner ? (Object.keys(sectionLabels) as SectionId[]) : agentSections), [isOwner]);
 
   const [properties, setProperties] = useState<Property[]>([]);
   const [floors, setFloors] = useState<Floor[]>([]);
@@ -661,6 +710,7 @@ export default function AdminApp({ user }: { user: AdminUser }) {
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [maintenance, setMaintenance] = useState<MaintenanceRequest[]>([]);
   const [inquiries, setInquiries] = useState<Inquiry[]>([]);
+  const [staff, setStaff] = useState<StaffMember[]>([]);
   const [selectedPropertyId, setSelectedPropertyId] = useState("");
 
   const [propertyForm, setPropertyForm] = useState<Property>(emptyProperty());
@@ -685,11 +735,13 @@ export default function AdminApp({ user }: { user: AdminUser }) {
   const [editingPaymentId, setEditingPaymentId] = useState("");
   const [editingExpenseId, setEditingExpenseId] = useState("");
   const [editingMaintenanceId, setEditingMaintenanceId] = useState("");
+  const [staffForm, setStaffForm] = useState<StaffForm>({ name: "", phone: "", propertyIds: [] });
+  const [editingStaffId, setEditingStaffId] = useState("");
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState<ToastState>(null);
-  const [activeSection, setActiveSection] = useState<SectionId>("properties");
+  const [activeSection, setActiveSection] = useState<SectionId>(user.role === "AGENT_CARETAKER" ? "units" : "properties");
 
   const [tenantSearch, setTenantSearch] = useState("");
   const [unitSearch, setUnitSearch] = useState("");
@@ -713,6 +765,7 @@ export default function AdminApp({ user }: { user: AdminUser }) {
   const [reportLoading, setReportLoading] = useState(false);
   const [reportError, setReportError] = useState<string | null>(null);
   const [sms, setSms] = useState<BootstrapPayload["sms"]>({ configured: false, mode: "simulated", senderId: null });
+  const [email, setEmail] = useState<BootstrapPayload["email"]>({ configured: false, mode: "simulated", from: null });
   const [testingPhone, setTestingPhone] = useState(false);
 
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -779,6 +832,17 @@ export default function AdminApp({ user }: { user: AdminUser }) {
         setMessages(data.messages);
         setIncoming(data.incoming);
         setSms(data.sms);
+        setEmail(data.email);
+
+        if (user.role === "OWNER") {
+          const staffData = await requestJson<{ staff: StaffMember[] }>("/api/staff");
+
+          if (!active) {
+            return;
+          }
+
+          setStaff(staffData.staff);
+        }
 
         const firstId = data.properties[0]?.id ?? "";
         setSelectedPropertyId(firstId);
@@ -866,7 +930,7 @@ export default function AdminApp({ user }: { user: AdminUser }) {
       const expected = months * Number(lease.monthlyRent || 0);
       const paid = payments
         .filter((payment) => payment.leaseId === lease.id && payment.status === "CONFIRMED")
-        .reduce((total, payment) => total + Number(payment.amount || 0), 0);
+        .reduce((total, payment) => total + Number(payment.rentPortion ?? (payment.amount || 0)), 0);
       const owed = Math.max(0, expected - paid);
 
       map.set(lease.id, owed);
@@ -926,11 +990,18 @@ export default function AdminApp({ user }: { user: AdminUser }) {
     setExpenses(data.expenses);
     setMaintenance(data.maintenance);
     setInquiries(data.inquiries);
+    setSms(data.sms);
+    setEmail(data.email);
     setSelectedPropertyId((current) => current || data.properties[0]?.id || "");
+
+    if (user.role === "OWNER") {
+      const staffData = await requestJson<{ staff: StaffMember[] }>("/api/staff");
+      setStaff(staffData.staff);
+    }
   }
 
   async function submitJson(path: string, method: "POST" | "PATCH", body: Record<string, unknown>) {
-    await requestJson(path, {
+    return requestJson<Record<string, unknown>>(path, {
       method,
       body: JSON.stringify(body),
     });
@@ -1083,8 +1154,13 @@ export default function AdminApp({ user }: { user: AdminUser }) {
         await submitJson(`/api/tenants/${editingTenantId}`, "PATCH", payload);
         notify("success", "Tenant updated");
       } else {
-        await submitJson(`/api/properties/${tenantForm.propertyId}/tenants`, "POST", payload);
-        notify("success", "Tenant created");
+        const result = await submitJson(`/api/properties/${tenantForm.propertyId}/tenants`, "POST", payload);
+
+        if (result && typeof result.attachedPayments === "number" && result.attachedPayments > 0) {
+          notify("success", `Tenant created — ${result.attachedPayments} M-Pesa payment(s) linked to their phone`);
+        } else {
+          notify("success", "Tenant created");
+        }
       }
 
       await refresh();
@@ -1111,8 +1187,13 @@ export default function AdminApp({ user }: { user: AdminUser }) {
         await submitJson(`/api/leases/${editingLeaseId}`, "PATCH", leaseForm);
         notify("success", "Lease updated");
       } else {
-        await submitJson(`/api/properties/${leaseForm.propertyId}/leases`, "POST", leaseForm);
-        notify("success", "Lease created");
+        const result = await submitJson(`/api/properties/${leaseForm.propertyId}/leases`, "POST", leaseForm);
+
+        if (result && typeof result.appliedPayments === "number" && result.appliedPayments > 0) {
+          notify("success", `Lease created — ${result.appliedPayments} held M-Pesa payment(s) applied`);
+        } else {
+          notify("success", "Lease created");
+        }
       }
 
       await refresh();
@@ -1343,6 +1424,63 @@ export default function AdminApp({ user }: { user: AdminUser }) {
     }
   }
 
+  async function handleStaffSubmit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    if (!staffForm.name.trim() || !staffForm.phone.trim()) {
+      notify("error", "Enter a name and phone number for the agent");
+      return;
+    }
+
+    const staffPhoneError = phoneError(staffForm.phone);
+
+    if (staffPhoneError) {
+      notify("error", staffPhoneError);
+      return;
+    }
+
+    setSaving(true);
+
+    try {
+      const payload = {
+        name: staffForm.name.trim(),
+        phone: staffForm.phone.trim(),
+        propertyIds: staffForm.propertyIds,
+      };
+
+      if (editingStaffId) {
+        await submitJson(`/api/staff/${editingStaffId}`, "PATCH", payload);
+        notify("success", "Agent updated");
+      } else {
+        await submitJson("/api/staff", "POST", payload);
+        notify("success", "Agent created — they can sign in with their phone number via SMS code");
+      }
+
+      const data = await requestJson<{ staff: StaffMember[] }>("/api/staff");
+      setStaff(data.staff);
+      setEditingStaffId("");
+      setStaffForm({ name: "", phone: "", propertyIds: [] });
+    } catch (requestError) {
+      notify("error", requestError instanceof Error ? requestError.message : "Unable to save agent");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleStaffDelete(userId: string) {
+    setSaving(true);
+
+    try {
+      await requestJson(`/api/staff/${userId}`, { method: "DELETE" });
+      setStaff((current) => current.filter((member) => member.id !== userId));
+      notify("success", "Agent removed");
+    } catch (requestError) {
+      notify("error", requestError instanceof Error ? requestError.message : "Unable to remove agent");
+    } finally {
+      setSaving(false);
+    }
+  }
+
   async function handleSendMessages() {
     if (!selectedPropertyId) {
       return;
@@ -1462,7 +1600,12 @@ export default function AdminApp({ user }: { user: AdminUser }) {
           </div>
 
           <div className="rounded-md border border-slate-800 bg-slate-950 px-3 py-2">
-            <div className="text-xs font-medium text-slate-300">{user.name}</div>
+            <div className="flex items-center justify-between gap-2">
+              <div className="text-xs font-medium text-slate-300">{user.name}</div>
+              <span className="rounded-full border border-slate-700 bg-slate-900 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+                {roleLabels[user.role] ?? user.role}
+              </span>
+            </div>
             <div className="truncate text-xs text-slate-500">{user.email}</div>
           </div>
 
@@ -1482,18 +1625,18 @@ export default function AdminApp({ user }: { user: AdminUser }) {
           </div>
 
           <nav className="space-y-1">
-            {Object.entries(sectionLabels).map(([id, label]) => (
+            {visibleSections.map((id) => (
               <button
                 key={id}
                 type="button"
-                onClick={() => setActiveSection(id as SectionId)}
+                onClick={() => setActiveSection(id)}
                 className={`flex w-full items-center rounded-md border px-4 py-2.5 text-left text-sm font-medium transition ${
                   activeSection === id
                     ? "border-slate-600 bg-slate-800 text-slate-50"
                     : "border-transparent bg-transparent text-slate-300 hover:border-slate-700 hover:bg-slate-800/60"
                 }`}
               >
-                {label}
+                {sectionLabels[id]}
               </button>
             ))}
           </nav>
@@ -1544,7 +1687,7 @@ export default function AdminApp({ user }: { user: AdminUser }) {
             </div>
           </header>
 
-          {activeSection === "properties" ? (
+          {activeSection === "properties" && isOwner ? (
             <SectionCard title="Properties" description="Top-level building or compound records. Click a row to open it as the workspace.">
               <PropertyManager
                 loading={loading}
@@ -1565,62 +1708,86 @@ export default function AdminApp({ user }: { user: AdminUser }) {
           ) : null}
 
           {activeSection === "units" ? (
-            <div className="grid gap-6 xl:grid-cols-2">
-              <SectionCard title="Floors and sections" description="Optional labels for floors, blocks, or compound sections.">
-                <FloorManager
-                  loading={loading}
-                  saving={saving}
-                  selectedPropertyId={selectedPropertyId}
-                  floorForm={floorForm}
-                  setFloorForm={setFloorForm}
-                  editingFloorId={editingFloorId}
-                  setEditingFloorId={setEditingFloorId}
-                  handleFloorSubmit={handleFloorSubmit}
-                  floors={propertyFloors}
-                  units={propertyUnits}
-                  deleteResource={deleteResource}
-                />
-              </SectionCard>
-
-              <SectionCard title="Unit types" description="Property-specific categories like bedsitter, 1 bedroom, or shop.">
-                <UnitTypeManager
-                  loading={loading}
-                  saving={saving}
-                  selectedPropertyId={selectedPropertyId}
-                  unitTypeForm={unitTypeForm}
-                  setUnitTypeForm={setUnitTypeForm}
-                  editingUnitTypeId={editingUnitTypeId}
-                  setEditingUnitTypeId={setEditingUnitTypeId}
-                  handleUnitTypeSubmit={handleUnitTypeSubmit}
-                  unitTypes={propertyUnitTypes}
-                  units={propertyUnits}
-                  deleteResource={deleteResource}
-                />
-              </SectionCard>
-
-              <div className="xl:col-span-2">
-                <SectionCard title="Units" description="The actual unit names used on site, tied to a floor and unit type.">
-                  <UnitManager
+            isOwner ? (
+              <div className="grid gap-6 xl:grid-cols-2">
+                <SectionCard title="Floors and sections" description="Optional labels for floors, blocks, or compound sections.">
+                  <FloorManager
                     loading={loading}
                     saving={saving}
                     selectedPropertyId={selectedPropertyId}
-                    unitForm={unitForm}
-                    setUnitForm={setUnitForm}
-                    editingUnitId={editingUnitId}
-                    setEditingUnitId={setEditingUnitId}
-                    handleUnitSubmit={handleUnitSubmit}
-                    units={propertyUnits}
+                    floorForm={floorForm}
+                    setFloorForm={setFloorForm}
+                    editingFloorId={editingFloorId}
+                    setEditingFloorId={setEditingFloorId}
+                    handleFloorSubmit={handleFloorSubmit}
                     floors={propertyFloors}
-                    unitTypes={propertyUnitTypes}
-                    leases={propertyLeases}
-                    tenants={propertyTenants}
-                    search={unitSearch}
-                    setSearch={setUnitSearch}
+                    units={propertyUnits}
                     deleteResource={deleteResource}
                   />
                 </SectionCard>
+
+                <SectionCard title="Unit types" description="Property-specific categories like bedsitter, 1 bedroom, or shop.">
+                  <UnitTypeManager
+                    loading={loading}
+                    saving={saving}
+                    selectedPropertyId={selectedPropertyId}
+                    unitTypeForm={unitTypeForm}
+                    setUnitTypeForm={setUnitTypeForm}
+                    editingUnitTypeId={editingUnitTypeId}
+                    setEditingUnitTypeId={setEditingUnitTypeId}
+                    handleUnitTypeSubmit={handleUnitTypeSubmit}
+                    unitTypes={propertyUnitTypes}
+                    units={propertyUnits}
+                    deleteResource={deleteResource}
+                  />
+                </SectionCard>
+
+                <div className="xl:col-span-2">
+                  <SectionCard title="Units" description="The actual unit names used on site, tied to a floor and unit type.">
+                    <UnitManager
+                      loading={loading}
+                      saving={saving}
+                      selectedPropertyId={selectedPropertyId}
+                      unitForm={unitForm}
+                      setUnitForm={setUnitForm}
+                      editingUnitId={editingUnitId}
+                      setEditingUnitId={setEditingUnitId}
+                      handleUnitSubmit={handleUnitSubmit}
+                      units={propertyUnits}
+                      floors={propertyFloors}
+                      unitTypes={propertyUnitTypes}
+                      leases={propertyLeases}
+                      tenants={propertyTenants}
+                      search={unitSearch}
+                      setSearch={setUnitSearch}
+                      deleteResource={deleteResource}
+                    />
+                  </SectionCard>
+                </div>
               </div>
-            </div>
+            ) : (
+              <SectionCard title="Units" description="Units at your assigned property. This list is read-only.">
+                <UnitManager
+                  loading={loading}
+                  saving={saving}
+                  selectedPropertyId={selectedPropertyId}
+                  unitForm={unitForm}
+                  setUnitForm={setUnitForm}
+                  editingUnitId={editingUnitId}
+                  setEditingUnitId={setEditingUnitId}
+                  handleUnitSubmit={handleUnitSubmit}
+                  units={propertyUnits}
+                  floors={propertyFloors}
+                  unitTypes={propertyUnitTypes}
+                  leases={propertyLeases}
+                  tenants={propertyTenants}
+                  search={unitSearch}
+                  setSearch={setUnitSearch}
+                  deleteResource={deleteResource}
+                  readOnly
+                />
+              </SectionCard>
+            )
           ) : null}
 
           {activeSection === "tenants" ? (
@@ -1642,6 +1809,8 @@ export default function AdminApp({ user }: { user: AdminUser }) {
                 search={tenantSearch}
                 setSearch={setTenantSearch}
                 deleteResource={deleteResource}
+                allowDelete={isOwner}
+                allowSendTestSms={isOwner}
               />
             </SectionCard>
           ) : null}
@@ -1661,6 +1830,7 @@ export default function AdminApp({ user }: { user: AdminUser }) {
                 units={propertyUnits}
                 tenants={propertyTenants}
                 deleteResource={deleteResource}
+                readOnly={!isOwner}
               />
             </SectionCard>
           ) : null}
@@ -1685,11 +1855,12 @@ export default function AdminApp({ user }: { user: AdminUser }) {
                 deleteResource={deleteResource}
                 sendSms={paymentSendSms}
                 setSendSms={setPaymentSendSms}
+                allowDelete={isOwner}
               />
             </SectionCard>
           ) : null}
 
-          {activeSection === "incoming" ? (
+          {activeSection === "incoming" && isOwner ? (
             <SectionCard
               title="Incoming payments"
               description="M-Pesa and bank payments waiting to be matched. Auto-matched payments are reconciled and a receipt SMS is sent automatically; unmatched ones wait here for confirmation."
@@ -1729,11 +1900,12 @@ export default function AdminApp({ user }: { user: AdminUser }) {
                 search={maintenanceSearch}
                 setSearch={setMaintenanceSearch}
                 deleteResource={deleteResource}
+                allowDelete={isOwner}
               />
             </SectionCard>
           ) : null}
 
-          {activeSection === "expenses" ? (
+          {activeSection === "expenses" && isOwner ? (
             <SectionCard title="Expenses" description="Record repairs, utilities, staff costs, and other outgoing money per property.">
               <ExpenseManager
                 loading={loading}
@@ -1752,7 +1924,7 @@ export default function AdminApp({ user }: { user: AdminUser }) {
             </SectionCard>
           ) : null}
 
-          {activeSection === "inquiries" ? (
+          {activeSection === "inquiries" && isOwner ? (
             <SectionCard title="Inquiries" description="Website leads and visitor requests. Move them through the pipeline as you follow up.">
               <InquiryManager
                 loading={loading}
@@ -1766,7 +1938,7 @@ export default function AdminApp({ user }: { user: AdminUser }) {
             </SectionCard>
           ) : null}
 
-          {activeSection === "messages" ? (
+          {activeSection === "messages" && isOwner ? (
             <SectionCard title="Messaging" description="Send rent due, balance, payment confirmation, or manual messages to tenants.">
               <MessageManager
                 loading={loading}
@@ -1776,13 +1948,14 @@ export default function AdminApp({ user }: { user: AdminUser }) {
                 setMessageForm={setMessageForm}
                 handleSendMessages={handleSendMessages}
                 sms={sms}
+                email={email}
                 tenants={propertyTenants}
                 messages={propertyMessages}
               />
             </SectionCard>
           ) : null}
 
-          {activeSection === "reports" ? (
+          {activeSection === "reports" && isOwner ? (
             <SectionCard title="Reports" description="Generate operational reports for the selected property.">
               <ReportsManager
                 loading={reportLoading}
@@ -1797,6 +1970,25 @@ export default function AdminApp({ user }: { user: AdminUser }) {
                 tenants={propertyTenants}
                 data={reportData}
                 error={reportError}
+              />
+            </SectionCard>
+          ) : null}
+
+          {activeSection === "staff" && isOwner ? (
+            <SectionCard
+              title="Staff"
+              description="Agents under the owner who can work on their assigned properties. They sign in with their own phone number via an SMS code."
+            >
+              <StaffManager
+                saving={saving}
+                staff={staff}
+                properties={properties}
+                staffForm={staffForm}
+                setStaffForm={setStaffForm}
+                editingStaffId={editingStaffId}
+                setEditingStaffId={setEditingStaffId}
+                handleStaffSubmit={handleStaffSubmit}
+                handleStaffDelete={handleStaffDelete}
               />
             </SectionCard>
           ) : null}
@@ -1882,6 +2074,19 @@ function PropertyManager({
         <Field label="Description">
           <textarea className={`${inputClass} min-h-24`} value={propertyForm.description ?? ""} onChange={(event) => setPropertyForm((current) => ({ ...current, description: event.target.value }))} />
         </Field>
+
+        <div className="rounded-xl border border-slate-700 bg-slate-800/40 p-4">
+          <div className="text-sm font-semibold text-white">M-Pesa paybill</div>
+          <p className="mt-1 text-xs text-slate-400">Used for Lipa na M-Pesa collections. When set, tenants see these details and direct payments match automatically.</p>
+          <div className="mt-3 grid gap-4 md:grid-cols-2">
+            <Field label="Paybill number">
+              <input className={inputClass} value={propertyForm.paybillNumber ?? ""} onChange={(event) => setPropertyForm((current) => ({ ...current, paybillNumber: event.target.value }))} placeholder="e.g. 4324321" />
+            </Field>
+            <Field label="Paybill passkey">
+              <input className={inputClass} value={propertyForm.paybillPasskey ?? ""} onChange={(event) => setPropertyForm((current) => ({ ...current, paybillPasskey: event.target.value }))} placeholder="Daraja passkey" />
+            </Field>
+          </div>
+        </div>
 
         <Field label="Notes">
           <textarea className={`${inputClass} min-h-24`} value={propertyForm.notes ?? ""} onChange={(event) => setPropertyForm((current) => ({ ...current, notes: event.target.value }))} />
@@ -2115,6 +2320,7 @@ function UnitManager({
   search,
   setSearch,
   deleteResource,
+  readOnly = false,
 }: {
   loading: boolean;
   saving: boolean;
@@ -2132,6 +2338,7 @@ function UnitManager({
   search: string;
   setSearch: (value: string) => void;
   deleteResource: (path: string) => Promise<void>;
+  readOnly?: boolean;
 }) {
   if (!selectedPropertyId) {
     return <EmptyState text="Select a property workspace to manage units." />;
@@ -2151,7 +2358,12 @@ function UnitManager({
 
   return (
     <div className="grid gap-6 xl:grid-cols-[0.9fr_1.1fr]">
-      <form className="grid gap-4" onSubmit={handleUnitSubmit}>
+      {readOnly ? (
+        <div className="rounded-md border border-slate-800 bg-slate-950 p-4 text-sm text-slate-400">
+          Viewing units at this property. Editing is available to the owner.
+        </div>
+      ) : (
+        <form className="grid gap-4" onSubmit={handleUnitSubmit}>
         <div className="grid gap-4 md:grid-cols-2">
           <Field label="Unit name">
             <input className={inputClass} value={unitForm.unitName} onChange={(event) => setUnitForm((current) => ({ ...current, unitName: event.target.value }))} placeholder="A1, G-02, House 12" />
@@ -2160,7 +2372,7 @@ function UnitManager({
             <input className={inputClass} value={unitForm.unitCode ?? ""} onChange={(event) => setUnitForm((current) => ({ ...current, unitCode: event.target.value }))} placeholder="Optional code" />
           </Field>
         </div>
-        <div className="grid gap-4 md:grid-cols-2">
+        <div className="grid gap-4 md:grid-cols-3">
           <Field label="Floor / section">
             <select className={inputClass} value={unitForm.floorId ?? ""} onChange={(event) => setUnitForm((current) => ({ ...current, floorId: event.target.value || null }))}>
               <option value="">Not assigned</option>
@@ -2172,6 +2384,9 @@ function UnitManager({
               <option value="">Not assigned</option>
               {unitTypes.map((unitType) => <option key={unitType.id} value={unitType.id}>{unitType.name}</option>)}
             </select>
+          </Field>
+          <Field label="Payment account ref">
+            <input className={inputClass} value={unitForm.paymentAccountRef ?? ""} onChange={(event) => setUnitForm((current) => ({ ...current, paymentAccountRef: event.target.value }))} placeholder="Auto-derived from unit code" />
           </Field>
         </div>
         <div className="grid gap-4 md:grid-cols-3">
@@ -2194,7 +2409,8 @@ function UnitManager({
           <button className={primaryButtonClass} type="submit" disabled={saving || loading}>{saving ? "Saving..." : editingUnitId ? "Save unit" : "Create unit"}</button>
           <button className={secondaryButtonClass} type="button" onClick={() => { setUnitForm(emptyUnit(selectedPropertyId)); setEditingUnitId(""); }}>Clear</button>
         </div>
-      </form>
+        </form>
+      )}
 
       <div className="grid gap-3">
         <SearchInput value={search} onChange={setSearch} placeholder="Search units by name or code" />
@@ -2231,8 +2447,14 @@ function UnitManager({
                     <Td><StatusBadge value={unit.status} /></Td>
                     <Td className="text-right">
                       <div className="flex justify-end gap-2">
-                        <TableButton onClick={() => { setEditingUnitId(unit.id); setUnitForm(unit); }}>Edit</TableButton>
-                        <ConfirmButton onConfirm={() => deleteResource(`/api/units/${unit.id}`)}>Delete</ConfirmButton>
+                        {readOnly ? (
+                          <span className="text-xs text-slate-600">Read only</span>
+                        ) : (
+                          <>
+                            <TableButton onClick={() => { setEditingUnitId(unit.id); setUnitForm(unit); }}>Edit</TableButton>
+                            <ConfirmButton onConfirm={() => deleteResource(`/api/units/${unit.id}`)}>Delete</ConfirmButton>
+                          </>
+                        )}
                       </div>
                     </Td>
                   </tr>
@@ -2263,6 +2485,8 @@ function TenantManager({
   search,
   setSearch,
   deleteResource,
+  allowDelete = true,
+  allowSendTestSms = true,
 }: {
   loading: boolean;
   saving: boolean;
@@ -2280,6 +2504,8 @@ function TenantManager({
   search: string;
   setSearch: (value: string) => void;
   deleteResource: (path: string) => Promise<void>;
+  allowDelete?: boolean;
+  allowSendTestSms?: boolean;
 }) {
   if (!selectedPropertyId) {
     return <EmptyState text="Select a property workspace to manage tenants." />;
@@ -2311,9 +2537,11 @@ function TenantManager({
           <Field label="Phone">
             <input className={inputClass} value={tenantForm.phone} onChange={(event) => setTenantForm((current) => ({ ...current, phone: event.target.value }))} placeholder="e.g. 0712 345 678" />
             <div className="mt-2 flex flex-wrap items-center gap-2">
-              <button className={secondaryButtonClass} type="button" disabled={testingPhone || !tenantForm.phone.trim()} onClick={() => handleSendTestSms(tenantForm.phone)}>
-                {testingPhone ? "Sending..." : "Send test SMS"}
-              </button>
+              {allowSendTestSms ? (
+                <button className={secondaryButtonClass} type="button" disabled={testingPhone || !tenantForm.phone.trim()} onClick={() => handleSendTestSms(tenantForm.phone)}>
+                  {testingPhone ? "Sending..." : "Send test SMS"}
+                </button>
+              ) : null}
               <span className="text-xs text-slate-500">Kenyan mobile number (07X / 01X). SMS alerts are sent via Africa&apos;s Talking.</span>
             </div>
           </Field>
@@ -2370,7 +2598,7 @@ function TenantManager({
                     <Td className="text-right">
                       <div className="flex justify-end gap-2">
                         <TableButton onClick={() => { setEditingTenantId(tenant.id); setTenantForm(tenant); }}>Edit</TableButton>
-                        <ConfirmButton onConfirm={() => deleteResource(`/api/tenants/${tenant.id}`)}>Delete</ConfirmButton>
+                        {allowDelete ? <ConfirmButton onConfirm={() => deleteResource(`/api/tenants/${tenant.id}`)}>Delete</ConfirmButton> : null}
                       </div>
                     </Td>
                   </tr>
@@ -2397,6 +2625,7 @@ function LeaseManager({
   units,
   tenants,
   deleteResource,
+  readOnly = false,
 }: {
   loading: boolean;
   saving: boolean;
@@ -2410,6 +2639,7 @@ function LeaseManager({
   units: Unit[];
   tenants: Tenant[];
   deleteResource: (path: string) => Promise<void>;
+  readOnly?: boolean;
 }) {
   if (!selectedPropertyId) {
     return <EmptyState text="Select a property workspace to manage leases." />;
@@ -2417,7 +2647,12 @@ function LeaseManager({
 
   return (
     <div className="grid gap-6 xl:grid-cols-[0.9fr_1.1fr]">
-      <form className="grid gap-4" onSubmit={handleLeaseSubmit}>
+      {readOnly ? (
+        <div className="rounded-md border border-slate-800 bg-slate-950 p-4 text-sm text-slate-400">
+          Viewing leases at this property. Editing is available to the owner.
+        </div>
+      ) : (
+        <form className="grid gap-4" onSubmit={handleLeaseSubmit}>
         <div className="grid gap-4 md:grid-cols-2">
           <Field label="Unit">
             <select className={inputClass} value={leaseForm.unitId} onChange={(event) => setLeaseForm((current) => ({ ...current, unitId: event.target.value }))}>
@@ -2468,7 +2703,8 @@ function LeaseManager({
           <button className={primaryButtonClass} type="submit" disabled={saving || loading}>{saving ? "Saving..." : editingLeaseId ? "Save lease" : "Create lease"}</button>
           <button className={secondaryButtonClass} type="button" onClick={() => { setLeaseForm(emptyLease(selectedPropertyId)); setEditingLeaseId(""); }}>Clear</button>
         </div>
-      </form>
+        </form>
+      )}
 
       {leases.length === 0 ? <EmptyState text="No leases yet for this property." /> : (
         <Table>
@@ -2496,8 +2732,14 @@ function LeaseManager({
                   <Td>{formatDate(lease.startDate)}</Td>
                   <Td className="text-right">
                     <div className="flex justify-end gap-2">
-                      <TableButton onClick={() => { setEditingLeaseId(lease.id); setLeaseForm(lease); }}>Edit</TableButton>
-                      <ConfirmButton onConfirm={() => deleteResource(`/api/leases/${lease.id}`)}>Delete</ConfirmButton>
+                      {readOnly ? (
+                        <span className="text-xs text-slate-600">Read only</span>
+                      ) : (
+                        <>
+                          <TableButton onClick={() => { setEditingLeaseId(lease.id); setLeaseForm(lease); }}>Edit</TableButton>
+                          <ConfirmButton onConfirm={() => deleteResource(`/api/leases/${lease.id}`)}>Delete</ConfirmButton>
+                        </>
+                      )}
                     </div>
                   </Td>
                 </tr>
@@ -2528,6 +2770,7 @@ function PaymentManager({
   deleteResource,
   sendSms,
   setSendSms,
+  allowDelete = true,
 }: {
   loading: boolean;
   saving: boolean;
@@ -2546,6 +2789,7 @@ function PaymentManager({
   deleteResource: (path: string) => Promise<void>;
   sendSms: boolean;
   setSendSms: (value: boolean) => void;
+  allowDelete?: boolean;
 }) {
   if (!selectedPropertyId) {
     return <EmptyState text="Select a property workspace to manage payments." />;
@@ -2637,6 +2881,7 @@ function PaymentManager({
                 <Th className="text-right">Amount</Th>
                 <Th>Method</Th>
                 <Th>Status</Th>
+                <Th>Allocation</Th>
                 <Th className="text-right">Actions</Th>
               </tr>
             </thead>
@@ -2654,10 +2899,13 @@ function PaymentManager({
                     <Td className="text-right">{money(payment.amount)}</Td>
                     <Td><StatusBadge value={payment.method} /></Td>
                     <Td><StatusBadge value={payment.status} /></Td>
+                    <Td>
+                      <StatusBadge value={payment.allocation ?? "RENT"}>{payment.allocation === "MIXED" ? `${money(payment.depositPortion)} deposit + ${money(payment.rentPortion)} rent` : (payment.allocation ?? "RENT")}</StatusBadge>
+                    </Td>
                     <Td className="text-right">
                       <div className="flex justify-end gap-2">
                         <TableButton onClick={() => { setEditingPaymentId(payment.id); setPaymentForm(payment); }}>Edit</TableButton>
-                        <ConfirmButton onConfirm={() => deleteResource(`/api/payments/${payment.id}`)}>Delete</ConfirmButton>
+                        {allowDelete ? <ConfirmButton onConfirm={() => deleteResource(`/api/payments/${payment.id}`)}>Delete</ConfirmButton> : null}
                       </div>
                     </Td>
                   </tr>
@@ -2798,6 +3046,7 @@ function MaintenanceManager({
   search,
   setSearch,
   deleteResource,
+  allowDelete = true,
 }: {
   loading: boolean;
   saving: boolean;
@@ -2813,6 +3062,7 @@ function MaintenanceManager({
   search: string;
   setSearch: (value: string) => void;
   deleteResource: (path: string) => Promise<void>;
+  allowDelete?: boolean;
 }) {
   if (!selectedPropertyId) {
     return <EmptyState text="Select a property workspace to manage maintenance." />;
@@ -2904,7 +3154,7 @@ function MaintenanceManager({
                     <Td className="text-right">
                       <div className="flex justify-end gap-2">
                         <TableButton onClick={() => { setEditingMaintenanceId(request.id); setMaintenanceForm(request); }}>Edit</TableButton>
-                        <ConfirmButton onConfirm={() => deleteResource(`/api/maintenance/${request.id}`)}>Delete</ConfirmButton>
+                        {allowDelete ? <ConfirmButton onConfirm={() => deleteResource(`/api/maintenance/${request.id}`)}>Delete</ConfirmButton> : null}
                       </div>
                     </Td>
                   </tr>
@@ -3041,6 +3291,10 @@ function IncomingManager({
     return lease ? units.find((unit) => unit.id === lease.unitId)?.unitName ?? "—" : "—";
   }
 
+  function unitNameById(unitId: string | null) {
+    return unitId ? units.find((unit) => unit.id === unitId)?.unitName ?? "—" : "—";
+  }
+
   return (
     <div className="grid gap-6">
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
@@ -3099,6 +3353,7 @@ function IncomingManager({
                 <tr>
                   <Th>Date</Th>
                   <Th>Phone</Th>
+                  <Th>Unit</Th>
                   <Th className="text-right">Amount</Th>
                   <Th>Method</Th>
                   <Th>Reference</Th>
@@ -3115,6 +3370,7 @@ function IncomingManager({
                     <tr key={item.id}>
                       <Td className="whitespace-nowrap">{formatDateTime(item.receivedAt)}</Td>
                       <Td>{item.phone}</Td>
+                      <Td>{unitNameById(item.unitId)}</Td>
                       <Td className="text-right font-medium text-slate-50">{money(item.amount)}</Td>
                       <Td><StatusBadge value={item.method} /></Td>
                       <Td className="max-w-[140px]"><div className="truncate" title={item.reference ?? ""}>{item.reference ?? "—"}</div></Td>
@@ -3171,6 +3427,7 @@ function IncomingManager({
                 <Th className="text-right">Amount</Th>
                 <Th>Method</Th>
                 <Th>Matched</Th>
+                <Th>Matched by</Th>
               </tr>
             </thead>
             <tbody>
@@ -3182,6 +3439,7 @@ function IncomingManager({
                   <Td className="text-right">{money(item.amount)}</Td>
                   <Td><StatusBadge value={item.method} /></Td>
                   <Td className="text-xs text-slate-400">{item.matchNote ?? "—"}</Td>
+                  <Td><StatusBadge value={item.matchedBy ?? "MANUAL"} /></Td>
                 </tr>
               ))}
             </tbody>
@@ -3200,6 +3458,7 @@ function MessageManager({
   setMessageForm,
   handleSendMessages,
   sms,
+  email,
   tenants,
   messages,
 }: {
@@ -3210,6 +3469,7 @@ function MessageManager({
   setMessageForm: React.Dispatch<React.SetStateAction<{ type: MessageType; channel: MessageChannel; recipients: RecipientMode; tenantId: string; body: string }>>;
   handleSendMessages: () => Promise<void>;
   sms: { configured: boolean; mode: "termii" | "simulated"; senderId: string | null };
+  email: { configured: boolean; mode: "resend" | "simulated"; from: string | null };
   tenants: Tenant[];
   messages: Message[];
 }) {
@@ -3224,6 +3484,11 @@ function MessageManager({
           {sms.configured
             ? `SMS via Termii${sms.senderId ? ` from ${sms.senderId}` : ""}. Messages are delivered for real.`
             : "SMS is in simulated mode — set TERMII_API_KEY and TERMII_SENDER_ID in your environment to send real Termii messages."}
+        </div>
+        <div className={`rounded-md border px-3 py-2 text-xs ${email.configured ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-300" : "border-amber-500/30 bg-amber-500/10 text-amber-300"}`}>
+          {email.configured
+            ? `Email via Resend${email.from ? ` from ${email.from}` : ""}. Messages are delivered for real.`
+            : "Email is in simulated mode — set RESEND_API_KEY and EMAIL_FROM in your environment to send real email."}
         </div>
         <div className="grid gap-4 md:grid-cols-2">
           <Field label="Message type">
@@ -3302,7 +3567,7 @@ function MessageManager({
                     <Td className="max-w-[280px]">
                       <div className="line-clamp-2 text-xs text-slate-400">{message.body}</div>
                       <div className="mt-1 text-[11px] text-slate-500">
-                        {message.provider === "termii" ? "via Termii" : message.provider === "simulated" ? "simulated" : message.channel}
+                        {message.provider === "termii" ? "via Termii" : message.provider === "resend" ? "via Resend" : message.provider === "simulated" ? "simulated" : message.channel}
                       </div>
                     </Td>
                   </tr>
@@ -3663,6 +3928,119 @@ function PaymentSummaryView({ report }: { report: PaymentSummaryReport }) {
           ))}
         </tbody>
       </Table>
+    </div>
+  );
+}
+
+function StaffManager({
+  saving,
+  staff,
+  properties,
+  staffForm,
+  setStaffForm,
+  editingStaffId,
+  setEditingStaffId,
+  handleStaffSubmit,
+  handleStaffDelete,
+}: {
+  saving: boolean;
+  staff: StaffMember[];
+  properties: Property[];
+  staffForm: StaffForm;
+  setStaffForm: React.Dispatch<React.SetStateAction<StaffForm>>;
+  editingStaffId: string;
+  setEditingStaffId: (value: string) => void;
+  handleStaffSubmit: (event: React.FormEvent<HTMLFormElement>) => Promise<void>;
+  handleStaffDelete: (userId: string) => Promise<void>;
+}) {
+  const toggleProperty = (propertyId: string) => {
+    setStaffForm((current) => ({
+      ...current,
+      propertyIds: current.propertyIds.includes(propertyId)
+        ? current.propertyIds.filter((id) => id !== propertyId)
+        : [...current.propertyIds, propertyId],
+    }));
+  };
+
+  return (
+    <div className="grid gap-6 xl:grid-cols-[0.9fr_1.1fr]">
+      <form className="grid gap-4" onSubmit={handleStaffSubmit}>
+        <div className="grid gap-4 md:grid-cols-2">
+          <Field label="Full name">
+            <input className={inputClass} value={staffForm.name} onChange={(event) => setStaffForm((current) => ({ ...current, name: event.target.value }))} placeholder="e.g. Mercy Wanjiku" />
+          </Field>
+          <Field label="Phone">
+            <input className={inputClass} value={staffForm.phone} onChange={(event) => setStaffForm((current) => ({ ...current, phone: event.target.value }))} placeholder="e.g. 0712 345 678" />
+            <span className="text-xs text-slate-500">They sign in with this number via an SMS code.</span>
+          </Field>
+        </div>
+        <Field label="Assigned properties">
+          {properties.length === 0 ? (
+            <div className="rounded-md border border-dashed border-slate-700 bg-slate-950 px-3 py-2.5 text-sm text-slate-500">
+              Create a property first, then assign it here.
+            </div>
+          ) : (
+            <div className="grid gap-2">
+              {properties.map((property) => (
+                <label key={property.id} className="flex items-center gap-2 rounded-md border border-slate-800 bg-slate-950 px-3 py-2.5 text-sm text-slate-300">
+                  <input
+                    type="checkbox"
+                    checked={staffForm.propertyIds.includes(property.id)}
+                    onChange={() => toggleProperty(property.id)}
+                    className="h-4 w-4 accent-emerald-500"
+                  />
+                  <span>{property.name}</span>
+                </label>
+              ))}
+            </div>
+          )}
+        </Field>
+        <div className="flex flex-wrap gap-3">
+          <button className={primaryButtonClass} type="submit" disabled={saving}>{saving ? "Saving..." : editingStaffId ? "Save agent" : "Create agent"}</button>
+          <button className={secondaryButtonClass} type="button" onClick={() => { setStaffForm({ name: "", phone: "", propertyIds: [] }); setEditingStaffId(""); }}>Clear</button>
+        </div>
+      </form>
+
+      <div className="grid gap-3">
+        {staff.length === 0 ? <EmptyState text="No agents yet. Create one to let them sign in and work on their assigned properties." /> : (
+          <Table>
+            <thead>
+              <tr>
+                <Th>Name</Th>
+                <Th>Phone</Th>
+                <Th>Properties</Th>
+                <Th className="text-right">Actions</Th>
+              </tr>
+            </thead>
+            <tbody>
+              {staff.map((member) => (
+                <tr key={member.id}>
+                  <Td className="font-medium text-slate-50">{member.name}</Td>
+                  <Td>{member.phone ?? "—"}</Td>
+                  <Td>
+                    {member.managedPropertyIds.length === 0
+                      ? "None"
+                      : member.managedPropertyIds.map((id) => properties.find((property) => property.id === id)?.name ?? id).join(", ")}
+                  </Td>
+                  <Td className="text-right">
+                    <div className="flex justify-end gap-2">
+                      <TableButton
+                        onClick={() => {
+                          setEditingStaffId(member.id);
+                          setStaffForm({ name: member.name, phone: member.phone ?? "", propertyIds: member.managedPropertyIds });
+                        }}
+                      >
+                        Edit
+                      </TableButton>
+                      <ConfirmButton onConfirm={() => handleStaffDelete(member.id)}>Delete</ConfirmButton>
+                    </div>
+                  </Td>
+                </tr>
+              ))}
+            </tbody>
+          </Table>
+        )}
+      </div>
     </div>
   );
 }

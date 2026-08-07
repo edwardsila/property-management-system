@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getString, jsonError } from "../../_shared";
+import { requireAdmin } from "@/lib/auth";
 
 type PropertyType =
   | "APARTMENT_BLOCK"
@@ -11,6 +12,12 @@ type PropertyType =
   | "OTHER";
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ propertyId: string }> }) {
+  const auth = await requireAdmin();
+
+  if (auth instanceof NextResponse) {
+    return auth;
+  }
+
   const { propertyId } = await params;
   const body = await request.json().catch(() => null);
 
@@ -23,6 +30,8 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ pr
   const location = getString(body.location);
   const notes = getString(body.notes);
   const type = body.type as PropertyType | undefined;
+  const paybillNumber = getString(body.paybillNumber);
+  const paybillPasskey = getString(body.paybillPasskey);
 
   const property = await prisma.property.update({
     where: { id: propertyId },
@@ -32,6 +41,8 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ pr
       type: type ?? undefined,
       location,
       notes: notes || null,
+      paybillNumber: paybillNumber || null,
+      paybillPasskey: paybillPasskey || null,
     },
   });
 
@@ -39,6 +50,12 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ pr
 }
 
 export async function DELETE(_request: Request, { params }: { params: Promise<{ propertyId: string }> }) {
+  const auth = await requireAdmin();
+
+  if (auth instanceof NextResponse) {
+    return auth;
+  }
+
   const { propertyId } = await params;
 
   await prisma.property.delete({

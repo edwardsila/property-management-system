@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireTenant } from "@/lib/tenant-auth";
 import { getDarajaConfig } from "@/lib/daraja";
-import { leaseBalance, nextRentDueDate } from "@/lib/rental";
+import { leaseBalance, nextRentDueDate, paymentTotalsForLease } from "@/lib/rental";
 
 export async function GET() {
   const auth = await requireTenant();
@@ -17,12 +17,12 @@ export async function GET() {
   const [property, leases, payments] = await Promise.all([
     prisma.property.findUnique({
       where: { id: tenant.propertyId },
-      select: { name: true, location: true },
+      select: { name: true, location: true, paybillNumber: true },
     }),
     prisma.lease.findMany({
       where: { tenantId: tenant.id, status: "ACTIVE" },
       orderBy: { startDate: "asc" },
-      include: { unit: { select: { unitName: true, unitCode: true } } },
+      include: { unit: { select: { unitName: true, unitCode: true, paymentAccountRef: true } } },
     }),
     prisma.payment.findMany({
       where: { tenantId: tenant.id, status: "CONFIRMED" },
@@ -34,21 +34,19 @@ export async function GET() {
   const leaseRows = [];
 
   for (const lease of leases) {
-    const paidResult = await prisma.payment.aggregate({
-      where: { leaseId: lease.id, status: "CONFIRMED" },
-      _sum: { amount: true },
-    });
-
-    const paid = Number(paidResult._sum.amount ?? 0);
-    const balance = leaseBalance(lease, paid, now);
+    const totals = await paymentTotalsForLease(lease.id);
+    const balance = leaseBalance(lease, totals.rentPaid, now);
 
     leaseRows.push({
       id: lease.id,
       unitName: lease.unit?.unitName ?? null,
       unitCode: lease.unit?.unitCode ?? null,
+      paymentAccountRef: lease.unit?.paymentAccountRef ?? lease.unit?.unitCode ?? lease.unit?.unitName ?? null,
       monthlyRent: balance.monthlyRent,
-      paid,
+      paid: totals.rentPaid,
       balance: balance.balance,
+      depositRequired: Number(lease.depositAmount ?? 0),
+      depositPaid: totals.depositPaid,
       nextDueDate: nextRentDueDate(lease.startDate, lease.graceDays, now),
     });
   }
@@ -75,6 +73,7 @@ export async function GET() {
       receivedAt: payment.receivedAt.toISOString(),
     })),
     totalBalance,
+    paybillNumber: property?.paybillNumber ?? null,
     mpesaConfigured: getDarajaConfig() !== null,
   });
 }

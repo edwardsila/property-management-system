@@ -138,12 +138,20 @@ export default function Home() {
               Why Terava
             </a>
           </nav>
-          <a
-            href="#contact"
-            className="rounded-full bg-leaf px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-leaf-dark"
-          >
-            Contact us
-          </a>
+          <div className="flex items-center gap-3">
+            <Link
+              href="/portal"
+              className="rounded-full border border-navy/20 px-5 py-2.5 text-sm font-semibold text-navy transition hover:border-navy"
+            >
+              Tenant portal
+            </Link>
+            <a
+              href="#contact"
+              className="rounded-full bg-leaf px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-leaf-dark"
+            >
+              Contact us
+            </a>
+          </div>
         </div>
       </header>
 
@@ -392,6 +400,7 @@ export default function Home() {
               <a href="#properties" className="transition hover:text-white">Properties</a>
               <a href="#why" className="transition hover:text-white">Why Terava</a>
               <Link href="/admin" className="transition hover:text-white">Admin</Link>
+              <Link href="/portal" className="transition hover:text-white">Tenant portal</Link>
             </div>
             <div className="flex flex-col gap-2">
               <span className="font-bold text-white">Contact</span>

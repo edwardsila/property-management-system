@@ -40,6 +40,8 @@ export async function POST(request: Request) {
   const location = getString(body.location);
   const type = body.type as PropertyType | undefined;
   const notes = getString(body.notes);
+  const paybillNumber = getString(body.paybillNumber);
+  const paybillPasskey = getString(body.paybillPasskey);
 
   if (!name || !location) {
     return jsonError("Property name and location are required");
@@ -55,6 +57,8 @@ export async function POST(request: Request) {
       type: type ?? "APARTMENT_BLOCK",
       location,
       notes: notes || null,
+      paybillNumber: paybillNumber || null,
+      paybillPasskey: paybillPasskey || null,
     },
   });
 

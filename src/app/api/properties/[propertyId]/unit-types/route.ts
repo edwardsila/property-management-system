@@ -1,8 +1,15 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getString, jsonError, parseSortOrder } from "../../../_shared";
+import { requireAdmin } from "@/lib/auth";
 
 export async function GET(_request: Request, { params }: { params: Promise<{ propertyId: string }> }) {
+  const auth = await requireAdmin();
+
+  if (auth instanceof NextResponse) {
+    return auth;
+  }
+
   const { propertyId } = await params;
   const unitTypes = await prisma.unitType.findMany({
     where: { propertyId },
@@ -13,6 +20,12 @@ export async function GET(_request: Request, { params }: { params: Promise<{ pro
 }
 
 export async function POST(request: Request, { params }: { params: Promise<{ propertyId: string }> }) {
+  const auth = await requireAdmin();
+
+  if (auth instanceof NextResponse) {
+    return auth;
+  }
+
   const { propertyId } = await params;
   const body = await request.json().catch(() => null);
 

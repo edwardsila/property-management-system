@@ -1,53 +1,9 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { jsonError } from "../../../_shared";
 import { createIncomingPayment } from "@/lib/reconcile";
+import { checkCallbackSecret, normalizePhone, parseDarajaTime, readNumber, readString } from "../_helpers";
 
 type DarajaPayload = Record<string, unknown>;
-
-function readString(...values: Array<unknown>) {
-  for (const value of values) {
-    if (typeof value === "string" && value.trim()) {
-      return value.trim();
-    }
-
-    if (typeof value === "number" && Number.isFinite(value)) {
-      return String(value);
-    }
-  }
-
-  return "";
-}
-
-function readNumber(...values: Array<unknown>) {
-  for (const value of values) {
-    const parsed = typeof value === "string" ? Number(value) : typeof value === "number" ? value : Number.NaN;
-
-    if (Number.isFinite(parsed)) {
-      return parsed;
-    }
-  }
-
-  return Number.NaN;
-}
-
-function normalizePhone(value: string) {
-  const digits = value.replace(/\D/g, "");
-
-  if (!digits) {
-    return "";
-  }
-
-  if (digits.startsWith("254")) {
-    return `254${digits.slice(3)}`;
-  }
-
-  if (digits.startsWith("0")) {
-    return `254${digits.slice(1)}`;
-  }
-
-  return `254${digits.slice(-9)}`;
-}
 
 function readCallbackMetadata(metadata: unknown) {
   let items: unknown = metadata;
@@ -102,6 +58,7 @@ function extractDarajaFields(body: DarajaPayload) {
       body.Reference,
       body.checkoutRequestId,
     ),
+    checkoutRequestId: readString(stkCallback?.CheckoutRequestID, body.CheckoutRequestID, body.checkoutRequestId),
     phoneNumber: readString(
       callbackData.PhoneNumber,
       body.PhoneNumber,
@@ -118,26 +75,39 @@ function extractDarajaFields(body: DarajaPayload) {
 }
 
 export async function POST(request: Request) {
+  const secretError = checkCallbackSecret(request);
+
+  if (secretError) {
+    return secretError;
+  }
+
   const body = (await request.json().catch(() => null)) as DarajaPayload | null;
 
   if (!body) {
-    return jsonError("Invalid JSON payload");
+    return NextResponse.json({ ok: true, matched: false, queued: false, reason: "Invalid JSON payload" });
   }
 
   const payload = extractDarajaFields(body);
 
   if (payload.resultCode !== 0) {
+    if (payload.checkoutRequestId) {
+      await prisma.pendingPayment.updateMany({
+        where: { checkoutRequestId: payload.checkoutRequestId, status: "PENDING" },
+        data: { status: "FAILED", error: `STK push rejected by Daraja (result code ${payload.resultCode})` },
+      });
+    }
+
     return NextResponse.json({ ok: true, matched: false, queued: false, reason: "Daraja callback reported a non-success result" });
   }
 
   if (!payload.transactionId || !Number.isFinite(payload.amount) || !payload.phoneNumber) {
-    return jsonError("Daraja callback is missing transaction, amount, or phone data");
+    return NextResponse.json({ ok: true, matched: false, queued: false, reason: "Daraja callback is missing transaction, amount, or phone data" });
   }
 
   const normalizedPhone = normalizePhone(payload.phoneNumber);
 
   if (!normalizedPhone) {
-    return jsonError("Unable to normalize phone number from Daraja callback");
+    return NextResponse.json({ ok: true, matched: false, queued: false, reason: "Unable to normalize phone number from Daraja callback" });
   }
 
   const existing = await prisma.payment.findFirst({
@@ -155,9 +125,10 @@ export async function POST(request: Request) {
     phone: normalizedPhone,
     reference: payload.reference || null,
     transactionId: payload.transactionId,
-    receivedAt: payload.receivedAt ? new Date(payload.receivedAt) : new Date(),
+    receivedAt: parseDarajaTime(payload.receivedAt),
     source: "DARAJ_A",
     notes: payload.notes || "Auto-reconciled from Daraja",
+    checkoutRequestId: payload.checkoutRequestId || null,
   });
 
   if (result.duplicate) {

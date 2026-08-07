@@ -48,6 +48,12 @@ enum PaymentStatus {
   REVERSED
 }
 
+enum PaymentAllocation {
+  DEPOSIT
+  RENT
+  MIXED
+}
+
 enum IncomingPaymentStatus {
   UNMATCHED
   MATCHED
@@ -82,6 +88,7 @@ enum MessageType {
   RENT_DUE
   BALANCE
   PAYMENT_RECEIVED
+  LEASE_ACTIVATED
   MANUAL
 }
 
@@ -115,20 +122,22 @@ model User {
 }
 
 model Property {
-  id           String       @id @default(cuid())
-  ownerId      String
-  managerId    String?
-  name         String
-  slug         String       @unique
-  type         PropertyType @default(APARTMENT_BLOCK)
-  location     String
-  description  String?
-  notes        String?
-  createdAt    DateTime     @default(now())
-  updatedAt    DateTime     @updatedAt
+  id             String       @id @default(cuid())
+  ownerId        String
+  managerId      String?
+  name           String
+  slug           String       @unique
+  type           PropertyType @default(APARTMENT_BLOCK)
+  location       String
+  description    String?
+  notes          String?
+  paybillNumber  String?
+  paybillPasskey String?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
 
-  owner      User      @relation("PropertyOwner", fields: [ownerId], references: [id], onDelete: Restrict)
-  manager    User?     @relation("PropertyManager", fields: [managerId], references: [id], onDelete: SetNull)
+  owner      User       @relation("PropertyOwner", fields: [ownerId], references: [id], onDelete: Restrict)
+  manager    User?      @relation("PropertyManager", fields: [managerId], references: [id], onDelete: SetNull)
   floors     Floor[]
   unitTypes  UnitType[]
   units      Unit[]
@@ -141,6 +150,9 @@ model Property {
   documents  Document[]
   reminders  Reminder[]
   messages   Message[]
+  pendingPayments PendingPayment[]
+
+  @@index([paybillNumber])
 }
 
 model Floor {
@@ -176,21 +188,22 @@ model UnitType {
 }
 
 model Unit {
-  id            String     @id @default(cuid())
-  propertyId    String
-  floorId       String?
-  unitTypeId    String?
-  unitName      String
-  unitCode      String?
-  status        UnitStatus @default(VACANT)
-  bedrooms      Int?
-  bathrooms     Int?
-  areaSqFt      Decimal?
-  rentAmount    Decimal?
-  depositAmount Decimal?
-  notes         String?
-  createdAt     DateTime   @default(now())
-  updatedAt     DateTime   @updatedAt
+  id                String     @id @default(cuid())
+  propertyId        String
+  floorId           String?
+  unitTypeId        String?
+  unitName          String
+  unitCode          String?
+  paymentAccountRef String?
+  status            UnitStatus @default(VACANT)
+  bedrooms          Int?
+  bathrooms         Int?
+  areaSqFt          Decimal?
+  rentAmount        Decimal?
+  depositAmount     Decimal?
+  notes             String?
+  createdAt         DateTime   @default(now())
+  updatedAt         DateTime   @updatedAt
 
   property Property  @relation(fields: [propertyId], references: [id], onDelete: Cascade)
   floor    Floor?    @relation(fields: [floorId], references: [id], onDelete: SetNull)
@@ -198,6 +211,7 @@ model Unit {
   leases   Lease[]
   requests MaintenanceRequest[]
   documents Document[]
+  pendingPayments PendingPayment[]
 
   @@unique([propertyId, unitName])
   @@index([propertyId, status])
@@ -228,6 +242,7 @@ model Tenant {
   requests  MaintenanceRequest[]
   inquiries Inquiry[]
   messages  Message[]
+  pendingPayments PendingPayment[]
 
   @@index([propertyId, fullName])
 }
@@ -254,6 +269,7 @@ model Lease {
   tenant   Tenant   @relation(fields: [tenantId], references: [id], onDelete: Restrict)
   payments Payment[]
   messages Message[]
+  pendingPayments PendingPayment[]
 
   @@index([propertyId, status])
   @@index([unitId, status])
@@ -268,6 +284,9 @@ model Payment {
   amount     Decimal
   method     PaymentMethod
   status     PaymentStatus @default(CONFIRMED)
+  allocation PaymentAllocation @default(RENT)
+  depositPortion Decimal @default(0)
+  rentPortion    Decimal @default(0)
   reference  String?
   receivedAt DateTime      @default(now())
   notes      String?
@@ -348,12 +367,14 @@ model IncomingPayment {
   propertyId    String?
   tenantId      String?
   leaseId       String?
+  unitId        String?
   amount        Decimal
   method        PaymentMethod         @default(MPESA)
   source        String                @default("MANUAL")
   phone         String
   reference     String?
   transactionId String?
+  matchedBy     String?
   receivedAt    DateTime              @default(now())
   status        IncomingPaymentStatus @default(UNMATCHED)
   matchNote     String?
@@ -365,7 +386,35 @@ model IncomingPayment {
   @@index([status, createdAt])
   @@index([propertyId, status])
   @@index([phone])
+  @@index([unitId, status])
   @@index([transactionId])
+}
+
+model PendingPayment {
+  id                    String              @id @default(cuid())
+  propertyId            String
+  leaseId               String
+  unitId                String?
+  tenantId              String
+  phone                 String
+  amount                Decimal
+  accountReference      String?
+  merchantRequestId     String?
+  checkoutRequestId     String?             @unique
+  status                PendingPaymentStatus @default(PENDING)
+  callbackTransactionId String?
+  error                 String?
+  expiresAt             DateTime
+  createdAt             DateTime            @default(now())
+  updatedAt             DateTime            @updatedAt
+
+  property Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  lease    Lease    @relation(fields: [leaseId], references: [id], onDelete: Cascade)
+  unit     Unit?    @relation(fields: [unitId], references: [id], onDelete: SetNull)
+  tenant   Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([status, createdAt])
+  @@index([propertyId, status])
 }
 
 model Inquiry {
@@ -418,4 +467,10 @@ model Reminder {
   property Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
 
   @@index([propertyId, status])
+}
+
+enum PendingPaymentStatus {
+  PENDING
+  COMPLETED
+  FAILED
 }

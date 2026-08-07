@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { jsonError } from "../_shared";
-import { composeMessageBody, deliverMessage } from "@/lib/messaging";
+import { requireAdmin } from "@/lib/auth";
+import { composeMessageBody, composeMessageSubject, deliverMessage } from "@/lib/messaging";
 import { leaseBalance, nextRentDueDate } from "@/lib/rental";
 
 type MessageType = "RENT_DUE" | "BALANCE" | "PAYMENT_RECEIVED" | "MANUAL";
@@ -11,6 +12,12 @@ const messageTypes: MessageType[] = ["RENT_DUE", "BALANCE", "PAYMENT_RECEIVED", 
 const channels: MessageChannel[] = ["SMS", "EMAIL"];
 
 export async function GET(request: Request) {
+  const auth = await requireAdmin();
+
+  if (auth instanceof NextResponse) {
+    return auth;
+  }
+
   const url = new URL(request.url);
   const propertyId = url.searchParams.get("propertyId") ?? "";
 
@@ -32,6 +39,12 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
+  const auth = await requireAdmin();
+
+  if (auth instanceof NextResponse) {
+    return auth;
+  }
+
   const body = await request.json().catch(() => null);
 
   if (!body) {
@@ -90,8 +103,8 @@ export async function POST(request: Request) {
     const paid = lease
       ? (await prisma.payment.aggregate({
           where: { leaseId: lease.id, status: "CONFIRMED" },
-          _sum: { amount: true },
-        }))._sum.amount ?? 0
+          _sum: { rentPortion: true },
+        }))._sum.rentPortion ?? 0
       : 0;
 
     const balance = lease ? leaseBalance(lease, Number(paid), now).balance : 0;
@@ -117,7 +130,7 @@ export async function POST(request: Request) {
         leaseId: lease?.id ?? null,
         type,
         channel,
-        subject: type === "MANUAL" ? customBody.slice(0, 80) : null,
+        subject: channel === "EMAIL" ? composeMessageSubject(type) || customBody.slice(0, 80) || null : null,
         body: content,
         status: "QUEUED",
       },

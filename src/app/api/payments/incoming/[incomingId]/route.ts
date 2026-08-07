@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { jsonError } from "../../../_shared";
+import { requireAdmin } from "@/lib/auth";
 import { confirmIncomingPayment, discardIncomingPayment } from "@/lib/reconcile";
 
 function getString(value: unknown) {
@@ -7,6 +8,12 @@ function getString(value: unknown) {
 }
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ incomingId: string }> }) {
+  const auth = await requireAdmin();
+
+  if (auth instanceof NextResponse) {
+    return auth;
+  }
+
   const { incomingId } = await params;
   const body = await request.json().catch(() => null);
 

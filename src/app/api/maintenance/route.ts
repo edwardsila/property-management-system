@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getString, jsonError } from "../_shared";
-import { requireAdmin } from "@/lib/auth";
+import { requireStaff } from "@/lib/auth";
+import { requireStaffForProperty } from "@/lib/auth";
 
 type MaintenanceStatus = "OPEN" | "IN_PROGRESS" | "AWAITING_APPROVAL" | "RESOLVED" | "CLOSED";
 
@@ -16,15 +17,21 @@ function clampPriority(value: unknown) {
 }
 
 export async function GET(request: Request) {
-  const auth = await requireAdmin();
+  const auth = await requireStaff();
 
   if (auth instanceof NextResponse) {
     return auth;
   }
 
   const propertyId = new URL(request.url).searchParams.get("propertyId");
+  const where = propertyId
+    ? { propertyId, ...(auth.user.role === "AGENT_CARETAKER" ? { property: { managerId: auth.user.id } } : {}) }
+    : auth.user.role === "AGENT_CARETAKER"
+      ? { property: { managerId: auth.user.id } }
+      : undefined;
+
   const requests = await prisma.maintenanceRequest.findMany({
-    where: propertyId ? { propertyId } : undefined,
+    where,
     orderBy: [{ status: "asc" }, { priority: "desc" }, { createdAt: "desc" }],
   });
 
@@ -32,7 +39,7 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const auth = await requireAdmin();
+  const auth = await requireStaff();
 
   if (auth instanceof NextResponse) {
     return auth;
@@ -51,6 +58,12 @@ export async function POST(request: Request) {
 
   if (!propertyId) {
     return jsonError("Select a property workspace first");
+  }
+
+  const scopeError = await requireStaffForProperty(auth.user.id, auth.user.role, propertyId);
+
+  if (scopeError) {
+    return scopeError;
   }
 
   if (!title) {

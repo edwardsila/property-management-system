@@ -1,8 +1,15 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getString, jsonError, parseSortOrder } from "../../_shared";
+import { requireAdmin } from "@/lib/auth";
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ unitTypeId: string }> }) {
+  const auth = await requireAdmin();
+
+  if (auth instanceof NextResponse) {
+    return auth;
+  }
+
   const { unitTypeId } = await params;
   const body = await request.json().catch(() => null);
 
@@ -28,6 +35,12 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ un
 }
 
 export async function DELETE(_request: Request, { params }: { params: Promise<{ unitTypeId: string }> }) {
+  const auth = await requireAdmin();
+
+  if (auth instanceof NextResponse) {
+    return auth;
+  }
+
   const { unitTypeId } = await params;
 
   await prisma.unitType.delete({ where: { id: unitTypeId } });

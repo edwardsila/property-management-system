@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { jsonError } from "../../_shared";
+import { requireAdmin } from "@/lib/auth";
 import { isValidKenyanMobile, parseKenyanPhone } from "@/lib/phone";
 import { createIncomingPayment } from "@/lib/reconcile";
 
@@ -47,6 +48,12 @@ function serializeIncoming(incoming: {
 }
 
 export async function GET(request: Request) {
+  const auth = await requireAdmin();
+
+  if (auth instanceof NextResponse) {
+    return auth;
+  }
+
   const url = new URL(request.url);
   const propertyId = getString(url.searchParams.get("propertyId"));
   const status = getString(url.searchParams.get("status")) as IncomingStatus | "";
@@ -64,6 +71,12 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
+  const auth = await requireAdmin();
+
+  if (auth instanceof NextResponse) {
+    return auth;
+  }
+
   const body = await request.json().catch(() => null);
 
   if (!body) {

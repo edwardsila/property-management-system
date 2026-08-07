@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getString, jsonError } from "../../_shared";
-import { requireAdmin } from "@/lib/auth";
+import { requireStaff } from "@/lib/auth";
+import { requireStaffForProperty } from "@/lib/auth";
 
 type MaintenanceStatus = "OPEN" | "IN_PROGRESS" | "AWAITING_APPROVAL" | "RESOLVED" | "CLOSED";
 
@@ -18,7 +19,7 @@ function clampPriority(value: unknown) {
 }
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ requestId: string }> }) {
-  const auth = await requireAdmin();
+  const auth = await requireStaff();
 
   if (auth instanceof NextResponse) {
     return auth;
@@ -35,6 +36,12 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ re
 
   if (!existing) {
     return jsonError("Maintenance request not found", 404);
+  }
+
+  const scopeError = await requireStaffForProperty(auth.user.id, auth.user.role, existing.propertyId);
+
+  if (scopeError) {
+    return scopeError;
   }
 
   const status = getString(body.status);
@@ -86,10 +93,14 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ re
 }
 
 export async function DELETE(_request: Request, { params }: { params: Promise<{ requestId: string }> }) {
-  const auth = await requireAdmin();
+  const auth = await requireStaff();
 
   if (auth instanceof NextResponse) {
     return auth;
+  }
+
+  if (auth.user.role !== "OWNER") {
+    return NextResponse.json({ error: "Only the owner can delete maintenance requests" }, { status: 403 });
   }
 
   const { requestId } = await params;
